@@ -22,68 +22,92 @@
   :start (on-start)
   :stop (on-stop))
 
-;; ----
-;; create the table from the data
-;; ----
-
-(defn extract-schema
-  "Assumes that a record only has keys belonging to the same namespace and no nested maps."
-  [records]
-  ;; TODO: 10.06.2022 simplifying things for now and only generating the schema from the first record map.
-  (let [single-record (first records)
-        table-name (->> single-record
-                     keys
-                     (map namespace)
-                     distinct
-                     first)
-        fields (->> single-record
-                 keys
-                 (map name)
-                 sort)]
-    (map (fn [field]
-           {:field-name field
-            :field-type (condp = (type ((keyword (str table-name "/" field)) single-record))
-                          Long "INTEGER"
-                          String "TEXT")
-            :table-name table-name}) fields)))
-
 (defn create-table-command
-  "Turns
-  ```
-  ({:field-name \"age\", :field-type \"INTEGER\", :table-name \"person\"}\n {:field-name \"id\", :field-type \"INTEGER\", :table-name \"person\"}\n {:field-name \"name\", :field-type \"TEXT\", :table-name \"person\"})
-  ```
-
-  into
+  "Turns a schema definition as required with Datomic into
 
   ```
   create table person (age INTEGER, id INTEGER, name TEXT)
   ```
   "
   [schema]
-  (let [table-name (:table-name (first schema))
+  (let [table-name (->> (first schema)
+                     :db/ident
+                     namespace)
+
         fields-and-types (->> schema
-                           (map #(str (:field-name %) " " (:field-type %)))
+                           ;; TODO: 11.06.2022 currently only the single cardinality attributes are supported
+                           (filter #(= :db.cardinality/one (:db/cardinality %)))
+                           (map (fn [attribute]
+                                  (str
+                                    (name (:db/ident attribute))
+                                    " "
+                                    (condp = (:db/valueType attribute)
+                                      :db.type/string "TEXT"
+                                      :db.type/long "INTEGER"))))
                            (str/join ", "))]
     (str "create table " table-name " (" fields-and-types ")")))
 
 (defn drop-table-command
   "Does the inverse of `create-table-command` and creates the command to drop the table."
   [schema]
-  (let [table-name (:table-name (first schema))]
+  (let [table-name (->> (first schema)
+                     :db/ident
+                     namespace)]
     (str "drop table " table-name)))
+
+(defn transact
+  "Turn lists of maps into insert calls"
+  [connection data]
+  (doseq [entry data]
+    ;; TODO: 11.06.2022 assuming that the map correlates to a single table insert.
+    (let [table-name (->> entry keys first namespace)]
+      (jdbc/insert! connection
+
+        ;; table-name
+        (keyword table-name)
+
+        ;; remove-namespaces-from-map
+        (reduce (fn [non-namespaced-entry namespaced-key]
+                  (conj non-namespaced-entry
+                    {(keyword (name namespaced-key)) (namespaced-key entry)}))
+          {}
+          (keys entry))))))
 
 (comment
   (mount/start #'db)
+  (mount/stop #'db)
+
+  (def person-schema [{:db/ident :person/id
+                       :db/valueType :db.type/long
+                       :db/cardinality :db.cardinality/one
+                       :db/doc "The id of the person"}
+
+                      {:db/ident :person/name
+                       :db/valueType :db.type/string
+                       :db/cardinality :db.cardinality/one
+                       :db/doc "The name of a person"}
+
+                      {:db/ident :person/age
+                       :db/valueType :db.type/long
+                       :db/cardinality :db.cardinality/one
+                       :db/doc "The age of a person"}])
+
+  (create-table-command person-schema)
+  (jdbc/execute! db (create-table-command person-schema))
 
   (def data [{:person/id 12
               :person/name "Alice"
-              :person/age 29}])
+              :person/age 29}
+             {:person/id 13
+              :person/name "Bob"
+              :person/age 28}])
 
-  (jdbc/execute! db (create-table-command (extract-schema data)))
-  (jdbc/insert! db :person {:id 12 :name "Alice" :age 29})
+  #_(jdbc/insert! db :person {:id 12 :name "Alice" :age 29})
+  (transact db data)
+
   (jdbc/get-by-id db :person 12)
   (jdbc/find-by-keys db :person {:name "Alice"})
-  (jdbc/execute! db (drop-table-command (extract-schema data)))
+  #_(jdbc/execute! db (drop-table-command (extract-schema data)))
 
   (= java.lang.String (type "something"))
 
