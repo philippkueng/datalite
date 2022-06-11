@@ -1,0 +1,4 @@
+.idea
+.clj-kondo
+*.db
+.nrepl-port
