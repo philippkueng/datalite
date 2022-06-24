@@ -22,6 +22,12 @@
   :start (on-start)
   :stop (on-stop))
 
+(defn- replace-dashes-with-underlines
+  "As SQLite can't have field names like `release-year` we'll need to convert it."
+  [field-name]
+  (-> field-name
+    (str/replace #"\-" "_")))
+
 (defn create-table-command
   "Turns a schema definition as required with Datomic into
 
@@ -39,7 +45,9 @@
                            (filter #(= :db.cardinality/one (:db/cardinality %)))
                            (map (fn [attribute]
                                   (str
-                                    (name (:db/ident attribute))
+                                    (-> (:db/ident attribute)
+                                      name
+                                      replace-dashes-with-underlines)
                                     " "
                                     (condp = (:db/valueType attribute)
                                       :db.type/string "TEXT"
@@ -69,7 +77,7 @@
         ;; remove-namespaces-from-map
         (reduce (fn [non-namespaced-entry namespaced-key]
                   (conj non-namespaced-entry
-                    {(keyword (name namespaced-key)) (namespaced-key entry)}))
+                    {(-> namespaced-key name replace-dashes-with-underlines keyword) (namespaced-key entry)}))
           {}
           (keys entry))))))
 
