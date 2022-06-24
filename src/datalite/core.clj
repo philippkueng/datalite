@@ -28,40 +28,48 @@
   (-> field-name
     (str/replace #"\-" "_")))
 
-(defn create-table-command
-  "Turns a schema definition as required with Datomic into
+(defn- schema->tables
+  [schema]
+  (->> schema
+    (map :db/ident)
+    (map namespace)
+    distinct))
+
+(defn- schema->fields-and-types
+  "Helper function only considers single cardinality attributes."
+  [schema table]
+  (->> schema
+    (filter (fn [attribute] (= table (-> attribute :db/ident namespace))))
+    (filter #(= :db.cardinality/one (:db/cardinality %)))
+    (map (fn [attribute]
+           {:field-name (-> (:db/ident attribute)
+                          name
+                          replace-dashes-with-underlines)
+            :field-type (condp = (:db/valueType attribute)
+                          :db.type/string "TEXT"
+                          :db.type/long "INTEGER")}))))
+
+(defn create-table-commands
+  "Turns a schema definition as required with Datomic into lists of creation commands eg.
 
   ```
-  create table person (age INTEGER, id INTEGER, name TEXT)
+  '(\"create table person (age INTEGER, id INTEGER, name TEXT)\")
   ```
   "
   [schema]
-  (let [table-name (->> (first schema)
-                     :db/ident
-                     namespace)
+  (->> (schema->tables schema)
+    (map (fn [table]
+           (let [field-and-types-part (->> (schema->fields-and-types schema table)
+                                        (map (fn [{:keys [field-name field-type]}]
+                                               (str field-name " " field-type)))
+                                        (str/join ", "))]
+             (str "create table " table " (" field-and-types-part ")"))))))
 
-        fields-and-types (->> schema
-                           ;; TODO: 11.06.2022 currently only the single cardinality attributes are supported
-                           (filter #(= :db.cardinality/one (:db/cardinality %)))
-                           (map (fn [attribute]
-                                  (str
-                                    (-> (:db/ident attribute)
-                                      name
-                                      replace-dashes-with-underlines)
-                                    " "
-                                    (condp = (:db/valueType attribute)
-                                      :db.type/string "TEXT"
-                                      :db.type/long "INTEGER"))))
-                           (str/join ", "))]
-    (str "create table " table-name " (" fields-and-types ")")))
-
-(defn drop-table-command
+(defn drop-table-commands
   "Does the inverse of `create-table-command` and creates the command to drop the table."
   [schema]
-  (let [table-name (->> (first schema)
-                     :db/ident
-                     namespace)]
-    (str "drop table " table-name)))
+  (->> (schema->tables schema)
+    (map #(str "drop table " %))))
 
 (defn transact
   "Turn lists of maps into insert calls"
@@ -85,38 +93,65 @@
   (mount/start #'db)
   (mount/stop #'db)
 
-  (def person-schema [{:db/ident :person/id
-                       :db/valueType :db.type/long
-                       :db/cardinality :db.cardinality/one
-                       :db/doc "The id of the person"}
+  (def schema [{:db/ident :person/name
+                :db/valueType :db.type/string
+                :db/cardinality :db.cardinality/one
+                :db/doc "The name of a person"}
 
-                      {:db/ident :person/name
-                       :db/valueType :db.type/string
-                       :db/cardinality :db.cardinality/one
-                       :db/doc "The name of a person"}
+               {:db/ident :person/age
+                :db/valueType :db.type/long
+                :db/cardinality :db.cardinality/one
+                :db/doc "The age of a person"}
 
-                      {:db/ident :person/age
-                       :db/valueType :db.type/long
-                       :db/cardinality :db.cardinality/one
-                       :db/doc "The age of a person"}])
+               {:db/ident :person/likes-films
+                :db/valueType :db.type/ref
+                :db/cardinality :db.cardinality/many
+                :db/doc "The films the person likes"}
 
-  (create-table-command person-schema)
-  (jdbc/execute! db (create-table-command person-schema))
+               {:db/ident :film/title
+                :db/valueType :db.type/string
+                :db/cardinality :db.cardinality/one
+                :db/doc "The title of the film"
+                :db/fulltext true}
 
-  (def data [{:person/id 12
-              :person/name "Alice"
+               {:db/ident :film/genre
+                :db/valueType :db.type/string
+                :db/cardinality :db.cardinality/one
+                :db/doc "The genre of the film"
+                :db/fulltext true}
+
+               {:db/ident :film/release-year
+                :db/valueType :db.type/long
+                :db/cardinality :db.cardinality/one
+                :db/doc "The year the film was released in theaters"}
+
+               {:db/ident :film/url
+                :db/valueType :db.type/string
+                :db/cardinality :db.cardinality/one
+                :db/doc "The URL where one can find out about the film"}])
+
+  ;; Create the tables.
+  (doseq [command (create-table-commands schema)]
+    (jdbc/execute! db command))
+
+  (def data [{:person/name "Alice"
               :person/age 29}
-             {:person/id 13
-              :person/name "Bob"
+             {:person/name "Bob"
               :person/age 28}])
+
+  (def films [{:film/title "Luca"
+               :film/genre "Animation"
+               :film/release-year 2021
+               :film/url "https://www.themoviedb.org/movie/508943-luca?language=en-US"}])
 
   #_(jdbc/insert! db :person {:id 12 :name "Alice" :age 29})
   (transact db data)
+  (transact db films)
+
+  ;; Drop the tables.
+  (doseq [command (drop-table-commands schema)]
+    (jdbc/execute! db command))
 
   (jdbc/get-by-id db :person 12)
   (jdbc/find-by-keys db :person {:name "Alice"})
-  #_(jdbc/execute! db (drop-table-command (extract-schema data)))
-
-  (= java.lang.String (type "something"))
-
   )
