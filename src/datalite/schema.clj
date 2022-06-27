@@ -33,7 +33,10 @@
   [schema]
   (->> (schema->tables schema)
     (map (fn [table]
-           (let [field-and-types-part (->> (schema->fields-and-types schema table)
+           (let [field-and-types-part (->> (cons
+                                             {:field-name "id"
+                                              :field-type "INTEGER PRIMARY KEY AUTOINCREMENT"}
+                                             (schema->fields-and-types schema table))
                                         (map (fn [{:keys [field-name field-type]}]
                                                (str field-name " " field-type)))
                                         (str/join ", "))]
