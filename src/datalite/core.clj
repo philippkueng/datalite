@@ -2,7 +2,8 @@
   (:require
     [datalite.utils :refer [replace-dashes-with-underlines]]
     [datalite.schema :refer [create-table-commands
-                             drop-table-commands]]
+                             drop-table-commands
+                             create-full-text-search-table-commands]]
     [mount.core :as mount]
     [clojure.java.jdbc :as jdbc]))
 
@@ -65,13 +66,13 @@
                 :db/valueType :db.type/string
                 :db/cardinality :db.cardinality/one
                 :db/doc "The title of the film"
-                :db/fulltext true}
+                :db/full-text-search true}
 
                {:db/ident :film/genre
                 :db/valueType :db.type/string
                 :db/cardinality :db.cardinality/one
                 :db/doc "The genre of the film"
-                :db/fulltext true}
+                :db/full-text-search true}
 
                {:db/ident :film/release-year
                 :db/valueType :db.type/long
@@ -107,4 +108,12 @@
 
   (jdbc/get-by-id db :person 12)
   (jdbc/find-by-keys db :person {:name "Alice"})
+
+  ;; create the fts virtual table
+  (doseq [command (create-full-text-search-table-commands schema)]
+    (jdbc/execute! db command))
+
+  ;; searching for films by genre prefix
+  (jdbc/query db "select film_fts.title, rank from film_fts where film_fts.genre match 'Anim*' order by rank")
+
   )
