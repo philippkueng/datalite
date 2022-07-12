@@ -1,4 +1,4 @@
 {:deps {org.clojure/clojure {:mvn/version "1.11.1"}
         org.clojure/java.jdbc {:mvn/version "0.7.12"}
-        org.xerial/sqlite-jdbc {:mvn/version "3.36.0.2"}
+        org.xerial/sqlite-jdbc {:mvn/version "3.36.0.3"}
         mount/mount {:mvn/version "0.1.16"}}}
