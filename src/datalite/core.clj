@@ -43,6 +43,13 @@
           {}
           (keys entry))))))
 
+(defn create-tables!
+  "Convenience functions to create all the tables required for supporting the schema"
+  [db schema]
+  (doseq [command (create-table-commands schema)]
+    (jdbc/execute! db command))
+  (doseq [command (create-full-text-search-table-commands schema)]
+    (jdbc/execute! db schema)))
 (comment
   (mount/start #'db)
   (mount/stop #'db)
