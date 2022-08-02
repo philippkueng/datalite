@@ -57,5 +57,5 @@ jobs:
         run: clojure -e "(+ 1 1)"
         
       - name: Run tests
-        run: clojure -M:test
+        run: clojure -X:test
        
