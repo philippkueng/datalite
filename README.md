@@ -1,5 +1,7 @@
 # DataLite
 
+[![CI](https://github.com/philippkueng/datalite/actions/workflows/main.yml/badge.svg)](https://github.com/philippkueng/datalite/actions/workflows/main.yml)
+
 **Disclaimer: This repo is highly experimental, expect APIs and implementations to change.**
 
 Datalog meets [SQLite](https://www.sqlite.org/index.html) for low volume data.
