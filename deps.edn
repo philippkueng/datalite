@@ -1,4 +1,9 @@
 {:deps {org.clojure/clojure {:mvn/version "1.11.1"}
         org.clojure/java.jdbc {:mvn/version "0.7.12"}
         org.xerial/sqlite-jdbc {:mvn/version "3.36.0.3"}
-        mount/mount {:mvn/version "0.1.16"}}}
+        mount/mount {:mvn/version "0.1.16"}}
+ :aliases {:test {:extra-paths ["test"]
+                  :extra-deps {io.github.cognitect-labs/test-runner
+                               {:git/tag "v0.5.1" :git/sha "dfb30dd"}}
+                  :main-opts ["-m" "cognitect.test-runner"]
+                  :exec-fn cognitect.test-runner.api/test}}}
