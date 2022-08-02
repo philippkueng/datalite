@@ -19,7 +19,8 @@ jobs:
   build:
     strategy:
       matrix:
-        os: [ubuntu-latest, macOS-latest, windows-latest]
+        os: [ubuntu-latest]
+#        os: [ubuntu-latest, macOS-latest, windows-latest]
 
     runs-on: ${{ matrix.os }}
 
@@ -56,5 +57,5 @@ jobs:
         run: clojure -e "(+ 1 1)"
         
       - name: Run tests
-        run: clojure -M:test
+        run: clj -M:test
        
