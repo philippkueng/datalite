@@ -35,7 +35,7 @@
   "Turns a schema definition as required with Datomic into lists of creation commands eg.
 
   ```
-  '(\"create table person (age INTEGER, id INTEGER, name TEXT)\")
+  '(\"CREATE TABLE person (age INTEGER, id INTEGER, name TEXT)\")
   ```
   "
   [schema]
@@ -48,7 +48,7 @@
                                         (map (fn [{:keys [field-name field-type]}]
                                                (str field-name " " field-type)))
                                         (str/join ", "))]
-             (str "create table " table " (" field-and-types-part ")"))))))
+             (str "CREATE TABLE " table " (" field-and-types-part ")"))))))
 
 (defn- schema->full-text-search-fields
   [schema table]
