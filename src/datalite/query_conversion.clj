@@ -94,7 +94,10 @@
                                                (namespace namespaced-keyword)
                                                "."
                                                (replace-dashes-with-underlines (name namespaced-keyword))))
-                                     value (-> pattern :pattern (nth 2) :value)]
+                                     raw-value (-> pattern :pattern (nth 2) :value)
+                                     value (if (= java.lang.String (type raw-value))
+                                             (str "'" raw-value "'")
+                                             raw-value)]
                                  (str/join " " [field "=" value])))))
         where-part (when (some? where-clauses)
                      (str "WHERE " (str/join " AND " where-clauses)))]
@@ -104,6 +107,8 @@
   (map-indexed (fn [idx item] (str idx "_" item))
     ["one" "two" "three"])
 
+  (type "animation")
+  (type 1985)
 
   (contains? #{"one" "two" "three"} "one2")
 
