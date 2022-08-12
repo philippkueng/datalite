@@ -26,19 +26,8 @@
     (< number 100) (str "0" number)
     :else (str number)))
 
-(comment
-
-
-  (zero-prefix 9)
-  (zero-prefix 99)
-  (zero-prefix 999)
-
-
-  )
-
 (defn datalog->sql [query]
   (let [parsed-query (parser/parse query)
-        ;; where-clauses (atom (:qwhere parsed-query))
         consumed-where-clauses (atom #{})
         select-fields (let [find-symbols (->> (:qfind parsed-query)
                                            :elements
