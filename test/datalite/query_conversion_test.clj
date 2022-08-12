@@ -50,36 +50,36 @@
 (deftest simple-filter-query-against-a-single-entity-type
   (let [datalog-query '[:find ?title ?year ?genre
                         :where
-                        [?e :movie/title ?title]
-                        [?e :movie/release-year ?year]
-                        [?e :movie/genre ?genre]
-                        [?e :movie/release-year 1985]]
+                        [?e :film/title ?title]
+                        [?e :film/release-year ?year]
+                        [?e :film/genre ?genre]
+                        [?e :film/release-year 1985]]
         sql-query (remove-line-breaks-and-trim
                     "SELECT
-                      movie.title as field_000,
-                      movie.release_year as field_001,
-                      movie.genre as field_002
-                     FROM movie
-                     WHERE movie.release_year = 1985")]
+                      film.title as field_000,
+                      film.release_year as field_001,
+                      film.genre as field_002
+                     FROM film
+                     WHERE film.release_year = 1985")]
     (is (= sql-query (datalog->sql datalog-query)))))
 
 (deftest multi-filter-query-against-a-single-entity-type
   (let [datalog-query '[:find ?title ?year ?genre
                         :where
-                        [?e :movie/title ?title]
-                        [?e :movie/release-year ?year]
-                        [?e :movie/genre ?genre]
-                        [?e :movie/release-year 1985]
-                        [?e :movie/genre "animation"]]
+                        [?e :film/title ?title]
+                        [?e :film/release-year ?year]
+                        [?e :film/genre ?genre]
+                        [?e :film/release-year 1985]
+                        [?e :film/genre "animation"]]
         sql-query (remove-line-breaks-and-trim
                     "SELECT
-                      movie.title as field_000,
-                      movie.release_year as field_001,
-                      movie.genre as field_002
-                     FROM movie
+                      film.title as field_000,
+                      film.release_year as field_001,
+                      film.genre as field_002
+                     FROM film
                      WHERE
-                      movie.release_year = 1985
-                      AND movie.genre = 'animation'")]
+                      film.release_year = 1985
+                      AND film.genre = 'animation'")]
     (is (= sql-query (datalog->sql datalog-query)))))
 
 (comment
