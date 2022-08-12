@@ -1,6 +1,5 @@
 (ns datalite.query-conversion
-  (:require [datalite.core :refer [db]]
-            [datalog.parser :as parser]
+  (:require [datalog.parser :as parser]
             [datalite.utils :refer [replace-dashes-with-underlines]]
             [clojure.string :as str]))
 
