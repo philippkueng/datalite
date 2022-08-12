@@ -4,6 +4,7 @@
     [datalite.schema :refer [create-table-commands
                              drop-table-commands
                              create-full-text-search-table-commands]]
+    [datalite.query-conversion :refer [datalog->sql]]
     [mount.core :as mount]
     [clojure.java.jdbc :as jdbc]))
 
@@ -49,15 +50,79 @@
   (doseq [command (create-table-commands schema)]
     (jdbc/execute! db command))
   (doseq [command (create-full-text-search-table-commands schema)]
-    (jdbc/execute! db schema)))
+    (jdbc/execute! db command)))
+
+(defn- map-record->vec-record [record]
+  (->> record
+    (into [])
+    (sort-by first)
+    (map (fn [field] (second field)))
+    (into [])))
+
+;(->> {:field_2 "Alice", :field_1 1, :field_3 29}
+;  (into [])
+;  (sort-by first)
+;  (map (fn [field] (second field)))
+;  (into [])
+;  )
+;=> [1 "Alice" 29]
+
+(defn- jdbc-response->datomic-response
+  "Converts `({:field_1 1, :field_2 \"Alice\", :field_3 29} {:field_1 2, :field_2 \"Bob\", :field_3 28})`
+   into `#{[2 \"Bob\" 28] [1 \"Alice\" 29]}`"
+  [response]
+  (->> response
+    (map map-record->vec-record)
+    (into #{})))
+
+(defn q
+  [connection datalog-query]
+  (let [datalog-sql (datalog->sql datalog-query)]
+    (->> (datalog->sql datalog-query)
+      (jdbc/query connection)
+      jdbc-response->datomic-response)))
+
+(comment
+  (q db '[:find ?id ?name
+          :where
+          [?e :person/name ?name]
+          [?e :person/id ?id]])
+
+  ;; todo the order of the response is wrong, ["Alice" 1] while it should be [1 "Alice"]
+  ;(q db '[:find ?id ?name
+  ;        :where
+  ;        [?e :person/name ?name]
+  ;        [?e :person/id ?id]])
+  ;=> #{["Alice" 1] ["Bob" 2]}
+
+  (datalog->sql '[:find ?id ?name
+                  :where
+                  [?e :person/name ?name]
+                  [?e :person/id ?id]])
+
+  (->> (jdbc/query db "select person.id as field_001, person.name as field_002, person.age as field_003 from person")
+    jdbc-response->datomic-response)
+
+  )
+
+(comment
+  #_(q db
+      '{:find [p1]
+        :where [[p1 :name n]
+                [p1 :last-name n]
+                [p1 :name name]]
+        :in [name]}
+      "Alice")
+  )
+
 (comment
   (mount/start #'db)
   (mount/stop #'db)
 
-  (def schema [{:db/ident :person/name
-                :db/valueType :db.type/string
-                :db/cardinality :db.cardinality/one
-                :db/doc "The name of a person"}
+  (def schema [#:db{:ident :person/name
+                    :valueType :db.type/string
+                    :cardinality :db.cardinality/one
+                    :doc "The name of a person"}
 
                {:db/ident :person/age
                 :db/valueType :db.type/long
@@ -123,4 +188,18 @@
   ;; searching for films by genre prefix
   (jdbc/query db "select film_fts.title, rank from film_fts where film_fts.genre match 'Anim*' order by rank")
 
+  ;; todo - maybe part for it's separate project
+  ;;        extract the schema for a list of maps and create a database schema for it
+  ;;        be able to throw some data at a SQLite database so we can query it afterwards.
+  ;; todo - let's say we'd like to run a query returning the .id of the original table not the _fts one, how would such a query look like?
+
+  )
+
+(comment
+  ;; datomic API for getting a particular entity
+  ;; that assumes thought that every entity in the system has a unique `eid`.
+  #_(d/entity db eid)
+
+  #_(q db '{:find [?e]
+            :where [[?e :person/name "Alice"]]})
   )
