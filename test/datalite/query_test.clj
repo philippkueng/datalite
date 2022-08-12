@@ -98,5 +98,4 @@
                        :where
                        [?e :person/name ?name]
                        [?e :person/id ?id]])]
-    (is (= 2 (count result)))
     (is (= #{[1 "Alice"] [2 "Bob"]} result))))
