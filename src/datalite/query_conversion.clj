@@ -31,20 +31,18 @@
         select-fields (let [find-symbols (->> (:qfind parsed-query)
                                            :elements
                                            (map :symbol)
-                                           set)
+                                           vec)
                             ;; todo how to decide which query is the nonarithmetic positive literal in the body if there are multiple matches?
-                            correlating-where-clauses (->> (:qwhere parsed-query)
-                                                        ;; enrich-vec-of-maps-with-index should be used here...
-                                                        (map-indexed
-                                                          (fn [index where-clause]
-                                                            (when (contains? find-symbols
-                                                                    (-> where-clause
-                                                                      :pattern
-                                                                      (nth 2)
-                                                                      :symbol))
-                                                              (assoc where-clause
-                                                                :index index))))
-                                                        (remove nil?))
+                            correlating-where-clauses (let [where-clauses (enrich-vec-of-maps-with-index (:qwhere parsed-query))]
+                                                        (->> find-symbols
+                                                          (map (fn [find-symbol]
+                                                                 (->> where-clauses
+                                                                   (filter (fn [where-clause]
+                                                                             (= find-symbol (-> where-clause
+                                                                                              :pattern
+                                                                                              (nth 2)
+                                                                                              :symbol))))
+                                                                   first)))))
                             update-consumed-where-clauses! (doseq [clause correlating-where-clauses]
                                                              (swap! consumed-where-clauses conj (:index clause)))]
                         (->> correlating-where-clauses
