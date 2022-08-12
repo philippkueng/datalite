@@ -33,6 +33,20 @@
     (datalog->sql datalog->sql))
   )
 
+(deftest simple-query-against-a-single-entity-type-without-a-filter-condition
+  (let [datalog-query '[:find ?title ?year ?genre
+                        :where
+                        [?e :film/title ?title]
+                        [?e :film/release-year ?year]
+                        [?e :film/genre ?genre]]
+        sql-query (remove-line-breaks-and-trim
+                    "SELECT
+                      film.title as field_000,
+                      film.release_year as field_001,
+                      film.genre as field_002
+                     FROM film")]
+    (is (= sql-query (datalog->sql datalog-query)))))
+
 (deftest simple-filter-query-against-a-single-entity-type
   (let [datalog-query '[:find ?title ?year ?genre
                         :where

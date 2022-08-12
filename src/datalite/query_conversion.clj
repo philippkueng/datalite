@@ -54,13 +54,13 @@
                                    (nth 1)
                                    :value)))
                           (map-indexed (fn [index attribute]
-                                 (str
-                                   (namespace attribute)
-                                   "."
-                                   (replace-dashes-with-underlines (name attribute))
-                                   " as "
-                                   "field_"
-                                   (zero-prefix index))))))
+                                         (str
+                                           (namespace attribute)
+                                           "."
+                                           (replace-dashes-with-underlines (name attribute))
+                                           " as "
+                                           "field_"
+                                           (zero-prefix index))))))
         select-part (str "SELECT " (str/join ", " select-fields))
         from-part (let [tables (->> parsed-query
                                  :qwhere
@@ -87,9 +87,11 @@
                                              (str "'" raw-value "'")
                                              raw-value)]
                                  (str/join " " [field "=" value])))))
-        where-part (when (some? where-clauses)
+        where-part (when (not-empty where-clauses)
                      (str "WHERE " (str/join " AND " where-clauses)))]
-    (str/join " " [select-part from-part where-part])))
+    (->> [select-part from-part where-part]
+      (remove nil?)
+      (str/join " "))))
 
 (comment
   (map-indexed (fn [idx item] (str idx "_" item))
