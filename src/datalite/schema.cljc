@@ -29,7 +29,8 @@
                           replace-dashes-with-underlines)
             :field-type (condp = (:db/valueType attribute)
                           :db.type/string "TEXT"
-                          :db.type/long "INTEGER")}))))
+                          :db.type/long "INTEGER"
+                          :db.type/boolean "INTEGER")}))))
 
 (defn create-table-commands
   "Turns a schema definition as required with Datomic into lists of creation commands eg.
