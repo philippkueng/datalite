@@ -3,3 +3,4 @@
 *.db
 .nrepl-port
 .cpcache
+.lsp
