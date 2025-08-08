@@ -32,7 +32,6 @@
                                            :elements
                                            (map :symbol)
                                            vec)
-                            ;; todo how to decide which query is the nonarithmetic positive literal in the body if there are multiple matches?
                             correlating-where-clauses (let [where-clauses (enrich-vec-of-maps-with-index (:qwhere parsed-query))]
                                                         (->> find-symbols
                                                           (map (fn [find-symbol]
@@ -45,20 +44,24 @@
                                                                    first)))))
                             update-consumed-where-clauses! (doseq [clause correlating-where-clauses]
                                                              (swap! consumed-where-clauses conj (:index clause)))]
-                        (->> correlating-where-clauses
-                          (map (fn [where-clause]
-                                 (-> where-clause
-                                   :pattern
-                                   (nth 1)
-                                   :value)))
-                          (map-indexed (fn [index attribute]
-                                         (str
-                                           (namespace attribute)
-                                           "."
-                                           (replace-dashes-with-underlines (name attribute))
-                                           " as "
-                                           "field_"
-                                           (zero-prefix index))))))
+                        (let [where-clauses (enrich-vec-of-maps-with-index (:qwhere parsed-query))]
+                          (map-indexed
+                            (fn [index find-symbol]
+                              (let [entity-clause (->> where-clauses
+                                                    (filter #(= find-symbol (-> % :pattern (nth 0) :symbol)))
+                                                    first)]
+                                (if entity-clause
+                                  (let [table (-> entity-clause :pattern (nth 1) :value namespace)]
+                                    (str table ".id as field_" (zero-prefix index)))
+                                  (let [attribute (-> correlating-where-clauses (nth index) :pattern (nth 1) :value)]
+                                    (str
+                                      (namespace attribute)
+                                      "."
+                                      (replace-dashes-with-underlines (name attribute))
+                                      " as "
+                                      "field_"
+                                      (zero-prefix index))))))
+                            find-symbols)))
         select-part (str "SELECT " (str/join ", " select-fields))
         from-part (let [tables (->> parsed-query
                                  :qwhere

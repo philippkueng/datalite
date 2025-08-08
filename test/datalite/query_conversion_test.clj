@@ -84,6 +84,23 @@
                       AND film.genre = 'animation'")]
     (is (= sql-query (datalog->sql datalog-query)))))
 
+(deftest returning-values-and-the-entity-id
+    (let [datalog-query '[:find ?e ?title ?year ?genre
+                          :where
+                          [?e :film/title ?title]
+                          [?e :film/release-year ?year]
+                          [?e :film/genre ?genre]
+                          [?e :film/release-year 1985]]
+          sql-query (remove-line-breaks-and-trim
+                      "SELECT
+                        film.id as field_000,
+                        film.title as field_001,
+                        film.release_year as field_002,
+                        film.genre as field_003
+                       FROM film
+                       WHERE film.release_year = 1985")]
+      (is (= sql-query (datalog->sql datalog-query)))))
+
 (comment
   (run-tests)
   )
