@@ -6,8 +6,8 @@
 (defn- remove-line-breaks-and-trim
   [query]
   (->> (str/split-lines query)
-    (map str/trim)
-    (str/join " ")))
+       (map str/trim)
+       (str/join " ")))
 
 (comment
   (remove-line-breaks-and-trim "SELECT
@@ -24,14 +24,13 @@
                         [?e :movie/genre ?genre]
                         [?e :movie/release-year 1985]]
         sql-query (remove-line-breaks-and-trim
-                    "SELECT
+                   "SELECT
                       movie.title as movie__title,
                       movie.year as movie__year,
                       movie.genre as movie__genre
                      FROM movie
                      WHERE movie.release_year = 1985")]
-    (datalog->sql datalog->sql))
-  )
+    (datalog->sql datalog->sql)))
 
 (deftest simple-query-against-a-single-entity-type-without-a-filter-condition
   (let [datalog-query '[:find ?id ?title ?year ?genre
@@ -41,7 +40,7 @@
                         [?e :film/genre ?genre]
                         [?e :film/id ?id]]
         sql-query (remove-line-breaks-and-trim
-                    "SELECT
+                   "SELECT
                       film.id as field_000,
                       film.title as field_001,
                       film.release_year as field_002,
@@ -57,7 +56,7 @@
                         [?e :film/genre ?genre]
                         [?e :film/release-year 1985]]
         sql-query (remove-line-breaks-and-trim
-                    "SELECT
+                   "SELECT
                       film.title as field_000,
                       film.release_year as field_001,
                       film.genre as field_002
@@ -74,7 +73,7 @@
                         [?e :film/release-year 1985]
                         [?e :film/genre "animation"]]
         sql-query (remove-line-breaks-and-trim
-                    "SELECT
+                   "SELECT
                       film.title as field_000,
                       film.release_year as field_001,
                       film.genre as field_002
@@ -85,21 +84,21 @@
     (is (= sql-query (datalog->sql datalog-query)))))
 
 (deftest returning-values-and-the-entity-id
-    (let [datalog-query '[:find ?e ?title ?year ?genre
-                          :where
-                          [?e :film/title ?title]
-                          [?e :film/release-year ?year]
-                          [?e :film/genre ?genre]
-                          [?e :film/release-year 1985]]
-          sql-query (remove-line-breaks-and-trim
-                      "SELECT
+  (let [datalog-query '[:find ?e ?title ?year ?genre
+                        :where
+                        [?e :film/title ?title]
+                        [?e :film/release-year ?year]
+                        [?e :film/genre ?genre]
+                        [?e :film/release-year 1985]]
+        sql-query (remove-line-breaks-and-trim
+                   "SELECT
                         film.id as field_000,
                         film.title as field_001,
                         film.release_year as field_002,
                         film.genre as field_003
                        FROM film
                        WHERE film.release_year = 1985")]
-      (is (= sql-query (datalog->sql datalog-query)))))
+    (is (= sql-query (datalog->sql datalog-query)))))
 
 (comment
   (run-tests)

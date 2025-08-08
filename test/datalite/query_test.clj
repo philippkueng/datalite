@@ -65,9 +65,7 @@
 
 (comment
   (mount/start #'db)
-  (mount/stop #'db)
-
-  )
+  (mount/stop #'db))
 
 (defn teardown! []
   (mount/stop #'db)

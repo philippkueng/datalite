@@ -1,12 +1,12 @@
 (ns datalite.core
   (:require
-    [datalite.utils :refer [replace-dashes-with-underlines]]
-    [datalite.schema :refer [create-table-commands
-                             drop-table-commands
-                             create-full-text-search-table-commands]]
-    [datalite.query-conversion :refer [datalog->sql]]
-    [mount.core :as mount]
-    [clojure.java.jdbc :as jdbc]))
+   [datalite.utils :refer [replace-dashes-with-underlines]]
+   [datalite.schema :refer [create-table-commands
+                            drop-table-commands
+                            create-full-text-search-table-commands]]
+   [datalite.query-conversion :refer [datalog->sql]]
+   [mount.core :as mount]
+   [clojure.java.jdbc :as jdbc]))
 
 (def db-uri "jdbc:sqlite:sample.db")
 (declare db)
@@ -35,14 +35,14 @@
       (jdbc/insert! connection
 
         ;; table-name
-        (keyword table-name)
+                    (keyword table-name)
 
         ;; remove-namespaces-from-map
-        (reduce (fn [non-namespaced-entry namespaced-key]
-                  (conj non-namespaced-entry
-                    {(-> namespaced-key name replace-dashes-with-underlines keyword) (namespaced-key entry)}))
-          {}
-          (keys entry))))))
+                    (reduce (fn [non-namespaced-entry namespaced-key]
+                              (conj non-namespaced-entry
+                                    {(-> namespaced-key name replace-dashes-with-underlines keyword) (namespaced-key entry)}))
+                            {}
+                            (keys entry))))))
 
 (defn create-tables!
   "Convenience functions to create all the tables required for supporting the schema"
@@ -54,10 +54,10 @@
 
 (defn- map-record->vec-record [record]
   (->> record
-    (into [])
-    (sort-by first)
-    (map (fn [field] (second field)))
-    (into [])))
+       (into [])
+       (sort-by first)
+       (map (fn [field] (second field)))
+       (into [])))
 
 ;(->> {:field_2 "Alice", :field_1 1, :field_3 29}
 ;  (into [])
@@ -72,15 +72,15 @@
    into `#{[2 \"Bob\" 28] [1 \"Alice\" 29]}`"
   [response]
   (->> response
-    (map map-record->vec-record)
-    (into #{})))
+       (map map-record->vec-record)
+       (into #{})))
 
 (defn q
   [connection datalog-query]
   (let [datalog-sql (datalog->sql datalog-query)]
     (->> (datalog->sql datalog-query)
-      (jdbc/query connection)
-      jdbc-response->datomic-response)))
+         (jdbc/query connection)
+         jdbc-response->datomic-response)))
 
 (comment
   (q db '[:find ?id ?name
@@ -101,19 +101,16 @@
                   [?e :person/id ?id]])
 
   (->> (jdbc/query db "select person.id as field_001, person.name as field_002, person.age as field_003 from person")
-    jdbc-response->datomic-response)
-
-  )
+       jdbc-response->datomic-response))
 
 (comment
   #_(q db
-      '{:find [p1]
-        :where [[p1 :name n]
-                [p1 :last-name n]
-                [p1 :name name]]
-        :in [name]}
-      "Alice")
-  )
+       '{:find [p1]
+         :where [[p1 :name n]
+                 [p1 :last-name n]
+                 [p1 :name name]]
+         :in [name]}
+       "Alice"))
 
 (comment
   (mount/start #'db)
@@ -192,14 +189,11 @@
   ;;        extract the schema for a list of maps and create a database schema for it
   ;;        be able to throw some data at a SQLite database so we can query it afterwards.
   ;; todo - let's say we'd like to run a query returning the .id of the original table not the _fts one, how would such a query look like?
-
   )
-
 (comment
   ;; datomic API for getting a particular entity
   ;; that assumes thought that every entity in the system has a unique `eid`.
   #_(d/entity db eid)
 
   #_(q db '{:find [?e]
-            :where [[?e :person/name "Alice"]]})
-  )
+            :where [[?e :person/name "Alice"]]}))

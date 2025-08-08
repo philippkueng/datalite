@@ -5,4 +5,4 @@
   "As SQLite can't have field names like `release-year` we'll need to convert it."
   [field-name]
   (-> field-name
-    (str/replace #"\-" "_")))
+      (str/replace #"\-" "_")))

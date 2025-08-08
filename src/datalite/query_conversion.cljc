@@ -5,19 +5,17 @@
 
 (defn- enrich-vec-of-maps-with-index [vector]
   (->> vector
-    (map-indexed
-      (fn [index map]
-        (assoc map :index index)))
-    (into [])))
+       (map-indexed
+        (fn [index map]
+          (assoc map :index index)))
+       (into [])))
 
 (comment
-  (enrich-vec-of-maps-with-index [{:foo "bar"} {:bar "foo"}])
-
-  )
+  (enrich-vec-of-maps-with-index [{:foo "bar"} {:bar "foo"}]))
 
 (defn- unconsumed-queries [where-clauses consumed-where-clauses]
   (->> where-clauses
-    (remove (fn [clause] (contains? consumed-where-clauses (:index clause))))))
+       (remove (fn [clause] (contains? consumed-where-clauses (:index clause))))))
 
 (defn- zero-prefix [number]
   (cond
@@ -29,74 +27,74 @@
   (let [parsed-query (parser/parse query)
         consumed-where-clauses (atom #{})
         select-fields (let [find-symbols (->> (:qfind parsed-query)
-                                           :elements
-                                           (map :symbol)
-                                           vec)
+                                              :elements
+                                              (map :symbol)
+                                              vec)
                             correlating-where-clauses (let [where-clauses (enrich-vec-of-maps-with-index (:qwhere parsed-query))]
                                                         (->> find-symbols
-                                                          (map (fn [find-symbol]
-                                                                 (->> where-clauses
-                                                                   (filter (fn [where-clause]
-                                                                             (= find-symbol (-> where-clause
-                                                                                              :pattern
-                                                                                              (nth 2)
-                                                                                              :symbol))))
-                                                                   first)))))
+                                                             (map (fn [find-symbol]
+                                                                    (->> where-clauses
+                                                                         (filter (fn [where-clause]
+                                                                                   (= find-symbol (-> where-clause
+                                                                                                      :pattern
+                                                                                                      (nth 2)
+                                                                                                      :symbol))))
+                                                                         first)))))
                             update-consumed-where-clauses! (doseq [clause correlating-where-clauses]
                                                              (swap! consumed-where-clauses conj (:index clause)))]
                         (let [where-clauses (enrich-vec-of-maps-with-index (:qwhere parsed-query))]
                           (map-indexed
-                            (fn [index find-symbol]
-                              (let [entity-clause (->> where-clauses
-                                                    (filter #(= find-symbol (-> % :pattern (nth 0) :symbol)))
-                                                    first)]
-                                (if entity-clause
-                                  (let [table (-> entity-clause :pattern (nth 1) :value namespace)]
-                                    (str table ".id as field_" (zero-prefix index)))
-                                  (let [attribute (-> correlating-where-clauses (nth index) :pattern (nth 1) :value)]
-                                    (str
-                                      (namespace attribute)
-                                      "."
-                                      (replace-dashes-with-underlines (name attribute))
-                                      " as "
-                                      "field_"
-                                      (zero-prefix index))))))
-                            find-symbols)))
+                           (fn [index find-symbol]
+                             (let [entity-clause (->> where-clauses
+                                                      (filter #(= find-symbol (-> % :pattern (nth 0) :symbol)))
+                                                      first)]
+                               (if entity-clause
+                                 (let [table (-> entity-clause :pattern (nth 1) :value namespace)]
+                                   (str table ".id as field_" (zero-prefix index)))
+                                 (let [attribute (-> correlating-where-clauses (nth index) :pattern (nth 1) :value)]
+                                   (str
+                                    (namespace attribute)
+                                    "."
+                                    (replace-dashes-with-underlines (name attribute))
+                                    " as "
+                                    "field_"
+                                    (zero-prefix index))))))
+                           find-symbols)))
         select-part (str "SELECT " (str/join ", " select-fields))
         from-part (let [tables (->> parsed-query
-                                 :qwhere
-                                 (filter :pattern)
-                                 (map (fn [pattern]
-                                        (-> (:pattern pattern)
-                                          (nth 1)
-                                          :value
-                                          namespace)))
-                                 distinct)]
+                                    :qwhere
+                                    (filter :pattern)
+                                    (map (fn [pattern]
+                                           (-> (:pattern pattern)
+                                               (nth 1)
+                                               :value
+                                               namespace)))
+                                    distinct)]
                     (str "FROM " (first tables)))
         ;; todo ignoring the 1st level ?e for now
         where-clauses (->> (unconsumed-queries
-                             (enrich-vec-of-maps-with-index (:qwhere parsed-query))
-                             @consumed-where-clauses)
-                        (map (fn [pattern]
-                               (let [field (let [namespaced-keyword (-> pattern :pattern (nth 1) :value)]
-                                             (str
-                                               (namespace namespaced-keyword)
-                                               "."
-                                               (replace-dashes-with-underlines (name namespaced-keyword))))
-                                     raw-value (-> pattern :pattern (nth 2) :value)
-                                     value (if (= java.lang.String (type raw-value))
-                                             (str "'" raw-value "'")
-                                             raw-value)]
-                                 (str/join " " [field "=" value])))))
+                            (enrich-vec-of-maps-with-index (:qwhere parsed-query))
+                            @consumed-where-clauses)
+                           (map (fn [pattern]
+                                  (let [field (let [namespaced-keyword (-> pattern :pattern (nth 1) :value)]
+                                                (str
+                                                 (namespace namespaced-keyword)
+                                                 "."
+                                                 (replace-dashes-with-underlines (name namespaced-keyword))))
+                                        raw-value (-> pattern :pattern (nth 2) :value)
+                                        value (if (= java.lang.String (type raw-value))
+                                                (str "'" raw-value "'")
+                                                raw-value)]
+                                    (str/join " " [field "=" value])))))
         where-part (when (not-empty where-clauses)
                      (str "WHERE " (str/join " AND " where-clauses)))]
     (->> [select-part from-part where-part]
-      (remove nil?)
-      (str/join " "))))
+         (remove nil?)
+         (str/join " "))))
 
 (comment
   (map-indexed (fn [idx item] (str idx "_" item))
-    ["one" "two" "three"])
+               ["one" "two" "three"])
 
   (type "animation")
   (type 1985)
@@ -105,9 +103,7 @@
 
   (namespace :movie/genre)                                  ;; -> movie
   (name :movie/genre)                                       ;; -> genre
-
   )
-
 (comment
   (let [parsed-query (parser/parse '[:find ?title ?year ?genre
                                      :where
@@ -117,8 +113,8 @@
                                      [(= ?genre "something")]
                                      [?e :movie/release-year 1985]])
         find-variable (->> (:qfind parsed-query)
-                        :elements
-                        (map :symbol))]
+                           :elements
+                           (map :symbol))]
     parsed-query)
 
   (datalog->sql '[:find ?title ?genre ?year
@@ -126,18 +122,16 @@
                   [?e :movie/title ?title]
                   [?e :movie/genre ?genre]
                   [?e :movie/release-year ?year]
-                  [?e :movie/release-year 1985]])
-
-  )
+                  [?e :movie/release-year 1985]]))
 
 (comment
   #_(q db
-      '{:find [p1]
-        :where [[p1 :person/name n]
-                [p1 :person/last-name n]
-                [p1 :person/name name]]
-        :in [name]}
-      "Alice")
+       '{:find [p1]
+         :where [[p1 :person/name n]
+                 [p1 :person/last-name n]
+                 [p1 :person/name name]]
+         :in [name]}
+       "Alice")
 
   ;; Analysis of the query
 
@@ -163,8 +157,7 @@
 
   ;; SELECT title, year, genre FROM movie WHERE movie.release_year = 1985;
 
-
-  ;; ----
+;; ----
   ;; Solving it using a Graph Database??
 
   '{:find [p1]
@@ -196,8 +189,9 @@
     [f1 :film/title film-title]
     [f1 :film/genre (contains? "Animation")]]
 
+  ;; how do I decide which table to use as the base for the join? - can I query the database to know which table is bigger?
+  ;;
   )
-
 (comment
   (parser/parse '[:find ?title ?year ?genre
                   :where
@@ -238,8 +232,8 @@
                                      [?e :movie/genre ?genre]
                                      [?e :movie/release-year 1985]])]
     (->> (:qfind parsed-query)
-      :elements
-      (map :symbol)))
+         :elements
+         (map :symbol)))
 
   ;; find the clauses in the :where block that are referring to the first variable in the :find block.
   (let [parsed-query (parser/parse '[:find ?title ?year ?genre
@@ -249,13 +243,11 @@
                                      [?e :movie/genre ?genre]
                                      [?e :movie/release-year 1985]])
         first-find-variable (->> (:qfind parsed-query)
-                              :elements
-                              (map :symbol)
-                              first)]
+                                 :elements
+                                 (map :symbol)
+                                 first)]
     (->> (:qwhere parsed-query)
-      (filter (fn [pattern]
-                (= first-find-variable
-                  (-> pattern :pattern (nth 2) :symbol))))))
-
-  )
+         (filter (fn [pattern]
+                   (= first-find-variable
+                      (-> pattern :pattern (nth 2) :symbol)))))))
 
