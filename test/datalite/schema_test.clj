@@ -14,10 +14,11 @@
                      :cardinality :db.cardinality/one
                      :doc "The age of a person"}
 
-                ;#:db{:ident :person/likes-films
-                ;     :valueType :db.type/ref
-                ;     :cardinality :db.cardinality/many
-                ;     :doc "The films the person likes"}
+                #:db{:ident :person/likes-films
+                     :valueType :db.type/ref
+                     :cardinality :db.cardinality/many
+                     :references #{:film/id}                ;; an addition that isn't needed by Datomic but helps us
+                     :doc "The films the person likes"}
 
                 #:db{:ident :film/title
                      :valueType :db.type/string
@@ -41,6 +42,7 @@
                      :cardinality :db.cardinality/one
                      :doc "The URL where one can find out about the film"}]
         expected-queries #{"CREATE TABLE person (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, age INTEGER)"
-                           "CREATE TABLE film (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT, genre TEXT, release_year INTEGER, url TEXT)"}
+                           "CREATE TABLE film (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT, genre TEXT, release_year INTEGER, url TEXT)"
+                           "CREATE TABLE join_film_person (film_id INTEGER, person_id INTEGER)"}
         generated-queries (set (create-table-commands schema))]
-    (is (= #{} (set/difference generated-queries expected-queries)))))
+    (is (= generated-queries expected-queries))))

@@ -5,9 +5,9 @@
 (defn- schema->tables
   [schema]
   (->> schema
-    (map :db/ident)
-    (map namespace)
-    distinct))
+       (map :db/ident)
+       (map namespace)
+       distinct))
 
 (defn- schema->attributes-of-table
   [table schema]
@@ -21,43 +21,55 @@
   "Helper function only considers single cardinality attributes."
   [schema table]
   (->> schema
-    (schema->attributes-of-table table)
-    (only-single-cardinality-attributes)
-    (map (fn [attribute]
-           {:field-name (-> (:db/ident attribute)
-                          name
-                          replace-dashes-with-underlines)
-            :field-type (condp = (:db/valueType attribute)
-                          :db.type/string "TEXT"
-                          :db.type/long "INTEGER"
-                          :db.type/boolean "INTEGER")}))))
+       (schema->attributes-of-table table)
+       (only-single-cardinality-attributes)
+       (map (fn [attribute]
+              {:field-name (-> (:db/ident attribute)
+                               name
+                               replace-dashes-with-underlines)
+               :field-type (condp = (:db/valueType attribute)
+                             :db.type/string "TEXT"
+                             :db.type/long "INTEGER"
+                             :db.type/boolean "INTEGER")}))))
+
+(defn- join-table-attributes
+  "Returns a sequence of maps describing join tables needed for many-to-many/ref attributes."
+  [schema]
+  (for [attr schema
+        :when (and (= :db.cardinality/many (:db/cardinality attr))
+                   (= :db.type/ref (:db/valueType attr))
+                   (seq (:db/references attr)))]
+    (let [tables (sort [(namespace (:db/ident attr))
+                        (-> (:db/references attr) first namespace)])]
+      {:tables tables
+       :columns (map #(str % "_id") tables)})))
 
 (defn create-table-commands
-  "Turns a schema definition as required with Datomic into lists of creation commands eg.
-
-  ```
-  '(\"CREATE TABLE person (age INTEGER, id INTEGER, name TEXT)\")
-  ```
-  "
+  "Turns a schema definition as required with Datomic into lists of creation commands. Example: 'CREATE TABLE person (age INTEGER, id INTEGER, name TEXT)'"
   [schema]
-  (->> (schema->tables schema)
-    (map (fn [table]
-           (let [field-and-types-part (->> (cons
-                                             {:field-name "id"
-                                              :field-type "INTEGER PRIMARY KEY AUTOINCREMENT"}
-                                             (schema->fields-and-types schema table))
-                                        (map (fn [{:keys [field-name field-type]}]
-                                               (str field-name " " field-type)))
-                                        (str/join ", "))]
-             (str "CREATE TABLE " table " (" field-and-types-part ")"))))))
+  (let [main-tables
+        (for [table (schema->tables schema)]
+          (let [field-and-types-part (->> (cons
+                                           {:field-name "id"
+                                            :field-type "INTEGER PRIMARY KEY AUTOINCREMENT"}
+                                           (schema->fields-and-types schema table))
+                                          (map (fn [{:keys [field-name field-type]}]
+                                                 (str field-name " " field-type)))
+                                          (str/join ", "))]
+            (str "CREATE TABLE " table " (" field-and-types-part ")")))
+        join-tables
+        (for [{:keys [tables columns]} (join-table-attributes schema)]
+          (str "CREATE TABLE join_" (first tables) "_" (second tables)
+               " (" (str/join ", " (map #(str % " INTEGER") columns)) ")"))]
+    (concat main-tables join-tables)))
 
 (defn- schema->full-text-search-fields
   [schema table]
   (->> schema
-    (schema->attributes-of-table table)
-    (only-single-cardinality-attributes)
-    (filter #(some? (:db/full-text-search %)))
-    (map #(-> % :db/ident name replace-dashes-with-underlines))))
+       (schema->attributes-of-table table)
+       (only-single-cardinality-attributes)
+       (filter #(some? (:db/full-text-search %)))
+       (map #(-> % :db/ident name replace-dashes-with-underlines))))
 
 (defn create-full-text-search-table-commands
   "Creates the equivalent of
@@ -91,36 +103,36 @@
   "
   [schema]
   (->> (schema->tables schema)
-    (map (fn [table]
-           (let [fields (schema->full-text-search-fields schema table)]
-             (when (not-empty fields)
-               (list
+       (map (fn [table]
+              (let [fields (schema->full-text-search-fields schema table)]
+                (when (not-empty fields)
+                  (list
                  ;; virtual full-text search table
-                 (str "create virtual table " table "_fts using fts5 ("
-                   (str/join "," fields)
-                   ",content='" table "',content_rowid='id')")
+                   (str "create virtual table " table "_fts using fts5 ("
+                        (str/join "," fields)
+                        ",content='" table "',content_rowid='id')")
 
                  ;; after insert trigger
-                 (str "create trigger " table "_ai after insert on " table
-                   " begin insert into " table "_fts (rowid," (str/join "," fields) ") "
-                   "values (new.id,new." (str/join ",new." fields) "); end")
+                   (str "create trigger " table "_ai after insert on " table
+                        " begin insert into " table "_fts (rowid," (str/join "," fields) ") "
+                        "values (new.id,new." (str/join ",new." fields) "); end")
 
                  ;; after delete trigger
-                 (str "create trigger " table "_ad after delete on " table
-                   " begin insert into " table "_fts (" table "_fts,rowid," (str/join "," fields) ")"
-                   " values ('delete',old.id,old." (str/join ",old." fields) "); end")
+                   (str "create trigger " table "_ad after delete on " table
+                        " begin insert into " table "_fts (" table "_fts,rowid," (str/join "," fields) ")"
+                        " values ('delete',old.id,old." (str/join ",old." fields) "); end")
 
                  ;; after update trigger
-                 (str "create trigger " table "_au after update on " table
-                   " begin insert into " table "_fts (" table "_fts,rowid," (str/join "," fields) ")"
-                   " values ('delete',old.id,old." (str/join ",old." fields) ");"
-                   " insert into " table "_fts (rowid," (str/join "," fields) ")"
-                   " values (new.id,new." (str/join ",new." fields) "); end;"))))))
-    flatten
-    (remove nil?)))
+                   (str "create trigger " table "_au after update on " table
+                        " begin insert into " table "_fts (" table "_fts,rowid," (str/join "," fields) ")"
+                        " values ('delete',old.id,old." (str/join ",old." fields) ");"
+                        " insert into " table "_fts (rowid," (str/join "," fields) ")"
+                        " values (new.id,new." (str/join ",new." fields) "); end;"))))))
+       flatten
+       (remove nil?)))
 
 (defn drop-table-commands
   "Does the inverse of `create-table-command` and creates the command to drop the table."
   [schema]
   (->> (schema->tables schema)
-    (map #(str "drop table " %))))
+       (map #(str "drop table " %))))
