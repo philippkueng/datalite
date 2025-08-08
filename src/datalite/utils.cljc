@@ -5,4 +5,9 @@
   "As SQLite can't have field names like `release-year` we'll need to convert it."
   [field-name]
   (-> field-name
-      (str/replace #"\-" "_")))
+      (str/replace #"-" "_")))
+
+(defn ordered-table-names
+  "Given a collection of table names, returns them in a canonical order (alphabetical)."
+  [tables]
+  (sort tables))

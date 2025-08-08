@@ -1,5 +1,5 @@
 (ns datalite.schema
-  (:require [datalite.utils :refer [replace-dashes-with-underlines]]
+  (:require [datalite.utils :refer [replace-dashes-with-underlines ordered-table-names]]
             [clojure.string :as str]))
 
 (defn- schema->tables
@@ -39,7 +39,7 @@
         :when (and (= :db.cardinality/many (:db/cardinality attr))
                    (= :db.type/ref (:db/valueType attr))
                    (seq (:db/references attr)))]
-    (let [tables (sort [(namespace (:db/ident attr))
+    (let [tables (ordered-table-names [(namespace (:db/ident attr))
                         (-> (:db/references attr) first namespace)])]
       {:tables tables
        :columns (map #(str % "_id") tables)})))
