@@ -41,7 +41,7 @@
                    (seq (:db/references attr)))]
     (let [tables (ordered-table-names [(namespace (:db/ident attr))
                         (-> (:db/references attr) first namespace)])]
-      {:tables tables
+      {:name (replace-dashes-with-underlines (format "join_%s_%s" (namespace (:db/ident attr)) (name (:db/ident attr))))
        :columns (map #(str % "_id") tables)})))
 
 (defn create-table-commands
@@ -58,8 +58,8 @@
                                           (str/join ", "))]
             (str "CREATE TABLE " table " (" field-and-types-part ")")))
         join-tables
-        (for [{:keys [tables columns]} (join-table-attributes schema)]
-          (str "CREATE TABLE join_" (first tables) "_" (second tables)
+        (for [{:keys [name columns]} (join-table-attributes schema)]
+          (str "CREATE TABLE " name
                " (" (str/join ", " (map #(str % " INTEGER") columns)) ")"))]
     (concat main-tables join-tables)))
 
