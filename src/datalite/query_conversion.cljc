@@ -1,6 +1,6 @@
 (ns datalite.query-conversion
   (:require [datalog.parser :as parser]
-            [datalite.utils :refer [replace-dashes-with-underlines]]
+            [datalite.utils :as utils]
             [clojure.string :as str]))
 
 (defn- enrich-vec-of-maps-with-index [vector]
@@ -55,23 +55,43 @@
                                    (str
                                     (namespace attribute)
                                     "."
-                                    (replace-dashes-with-underlines (name attribute))
+                                    (utils/replace-dashes-with-underlines (name attribute))
                                     " as "
                                     "field_"
                                     (zero-prefix index))))))
                            find-symbols)))
         select-part (str "SELECT " (str/join ", " select-fields))
-        from-part (let [tables (->> parsed-query
-                                    :qwhere
-                                    (filter :pattern)
-                                    (map (fn [pattern]
-                                           (-> (:pattern pattern)
-                                               (nth 1)
-                                               :value
-                                               namespace)))
-                                    distinct)]
-                    (str "FROM " (first tables)))
-        ;; todo ignoring the 1st level ?e for now
+        involved-tables (->> parsed-query
+                          :qwhere
+                          (filter :pattern)
+                          (map (fn [pattern]
+                                 (-> (:pattern pattern)
+                                   (nth 1)
+                                   :value
+                                   namespace)))
+                          distinct
+                          utils/ordered-table-names)
+        ;; based on what do we decide which table is the base? - take the first one alphabetically for now.
+        from-part (str "FROM " (-> involved-tables first))
+        join-part (if (> 1 (count involved-tables))
+                    ;; we got more than 1 table, hence we'll need to join them
+
+                    ;; in my example queries so far, we're only joining the :person entity with the :film entity
+                    ;;  however if we join multiple entities together, we'll need to keep track of how we'd need to join
+                    ;;  them. Meaning there'd have to be a pair relationship between eg. person <-> film and another
+                    ;;  between film <-> location, and yet another between location <-> country
+                    ;;
+                    ;; Assuming I have the latest version of the schema at hand we can:
+                    ;; -> use the involved-tables and find all the schema entries of :valueType :db.type/ref
+                    ;; person <-> film
+                    ;; film <-> location
+                    ;; location <-> country
+                    ;;
+                    ;; how can I find a connection eg. from person to country? I must have all the tables involved in
+                    ;;  the connection, but I'll need to find a path.
+
+                    ;; return an empty string as only a single table is involved which doesn't require a SQL join
+                    "")
         where-clauses (->> (unconsumed-queries
                             (enrich-vec-of-maps-with-index (:qwhere parsed-query))
                             @consumed-where-clauses)
@@ -80,7 +100,7 @@
                                                 (str
                                                  (namespace namespaced-keyword)
                                                  "."
-                                                 (replace-dashes-with-underlines (name namespaced-keyword))))
+                                                 (utils/replace-dashes-with-underlines (name namespaced-keyword))))
                                         raw-value (-> pattern :pattern (nth 2) :value)
                                         value (if (= java.lang.String (type raw-value))
                                                 (str "'" raw-value "'")
@@ -208,7 +228,7 @@
   ;                           :qwhere [#datalog.parser.type.Pattern{:source #datalog.parser.type.DefaultSrc{},
   ;                                                                 :pattern [#datalog.parser.type.Variable{:symbol ?e}
   ;                                                                           #datalog.parser.type.Constant{:value :movie/title}
-  ;                                                                           #datalog.parser.type.Variable{:symbol ?title}]}
+  ;                                                                           #blueydatalog.parser.type.Variable{:symbol ?title}]}
   ;                                    #datalog.parser.type.Pattern{:source #datalog.parser.type.DefaultSrc{},
   ;                                                                 :pattern [#datalog.parser.type.Variable{:symbol ?e}
   ;                                                                           #datalog.parser.type.Constant{:value :movie/release-year}
