@@ -43,6 +43,7 @@
                      :doc "The URL where one can find out about the film"}]
         expected-queries #{"CREATE TABLE person (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, age INTEGER)"
                            "CREATE TABLE film (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT, genre TEXT, release_year INTEGER, url TEXT)"
-                           "CREATE TABLE join_person_likes_films (film_id INTEGER, person_id INTEGER)"}
+                           "CREATE TABLE join_person_likes_films (film_id INTEGER, person_id INTEGER)"
+                           "CREATE TABLE schema (schema TEXT)"}
         generated-queries (set (create-table-commands schema))]
     (is (= generated-queries expected-queries))))
