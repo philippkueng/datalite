@@ -1,5 +1,5 @@
 (ns datalite.schema
-  (:require [datalite.utils :refer [replace-dashes-with-underlines ordered-table-names]]
+  (:require [datalite.utils :as utils :refer [replace-dashes-with-underlines ordered-table-names]]
             [clojure.string :as str]))
 
 (defn- schema->tables
@@ -41,7 +41,7 @@
                    (seq (:db/references attr)))]
     (let [tables (ordered-table-names [(namespace (:db/ident attr))
                         (-> (:db/references attr) first namespace)])]
-      {:name (replace-dashes-with-underlines (format "join_%s_%s" (namespace (:db/ident attr)) (name (:db/ident attr))))
+      {:name (utils/join-table-name (:db/ident attr))
        :columns (map #(str % "_id") tables)})))
 
 (defn create-table-commands

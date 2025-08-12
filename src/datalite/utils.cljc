@@ -11,3 +11,9 @@
   "Given a collection of table names, returns them in a canonical order (alphabetical)."
   [tables]
   (sort tables))
+
+(defn join-table-name [schema-attribute]
+  "eg. :person/likes-films"
+  (replace-dashes-with-underlines (format "join_%s_%s"
+                                    (namespace schema-attribute)
+                                    (name schema-attribute))))
