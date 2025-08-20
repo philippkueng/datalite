@@ -125,14 +125,4 @@
 
 (comment
   (run-tests)
-
-  ;; for the `simple-filter-query-against-multiple-joined-entities` test - I think the query should be more like:
-  SELECT
-  person.name as field_000,
-  film.title as field_001,
-  film.release_year as field_002,
-  film.genre as field_003
-  FROM film
-  JOIN join_film_person ON join_film_person.film = film.id
-  JOIN person ON join_film_person.person = person.id
-  WHERE film.release_year = 1985 AND person.likes_films = film.id)
+  )
