@@ -7,7 +7,7 @@
 
 (def test-database "test.db")
 (def db-uri (str "jdbc:sqlite:" test-database))
-(declare db)
+(declare conn)
 
 (defn on-start []
   (let [spec {:connection-uri db-uri}
@@ -17,12 +17,12 @@
       (assoc :dbtype :dbtype/sqlite))))
 
 (defn on-stop []
-  (-> db :connection .close)
+  (-> conn :connection .close)
   nil)
 
 (mount/defstate
   ^{:on-reload :noop}
-  db
+  conn
   :start (on-start)
   :stop (on-stop))
 
@@ -66,25 +66,25 @@
         :doc "The URL where one can find out about the film"}])
 
 (comment
-  (mount/start #'db)
-  (mount/stop #'db))
+  (mount/start #'conn)
+  (mount/stop #'conn))
 
 (defn teardown! []
-  (mount/stop #'db)
+  (mount/stop #'conn)
   (delete-if-exists test-database))
 
 (defn setup! []
   (teardown!)
-  (mount/start #'db)
-  (create-tables! db schema)
-  (transact db [{:person/name "Alice"
-                 :person/age 29}
-                {:person/name "Bob"
-                 :person/age 28}])
-  (transact db [{:film/title "Luca"
-                 :film/genre "Animation"
-                 :film/release-year 2021
-                 :film/url "https://www.themoviedb.org/movie/508943-luca?language=en-US"}]))
+  (mount/start #'conn)
+  (create-tables! conn schema)
+  (transact conn [{:person/name "Alice"
+                   :person/age 29}
+                  {:person/name "Bob"
+                   :person/age 28}])
+  (transact conn [{:film/title "Luca"
+                   :film/genre "Animation"
+                   :film/release-year 2021
+                   :film/url "https://www.themoviedb.org/movie/508943-luca?language=en-US"}]))
 
 (defn fixture [f]
   (setup!)
@@ -94,8 +94,8 @@
 (use-fixtures :once fixture)
 
 (deftest value-order-of-a-query-response
-  (let [result (q db '[:find ?id ?name
-                       :where
-                       [?e :person/name ?name]
-                       [?e :person/id ?id]])]
+  (let [result (q conn '[:find ?id ?name
+                         :where
+                         [?e :person/name ?name]
+                         [?e :person/id ?id]])]
     (is (= #{[1 "Alice"] [2 "Bob"]} result))))
