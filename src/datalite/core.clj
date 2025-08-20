@@ -47,10 +47,11 @@
 (defn create-tables!
   "Convenience functions to create all the tables required for supporting the schema"
   [connection schema]
-  (doseq [command (create-table-commands schema)]
+  (doseq [command (create-table-commands (:dbtype connection) schema)]
     (jdbc/execute! connection command))
-  (doseq [command (create-full-text-search-table-commands schema)]
-    (jdbc/execute! connection command)))
+  (when (= :dbtype/sqlite (:dbtype connection))
+    (doseq [command (create-full-text-search-table-commands schema)]
+      (jdbc/execute! connection command))))
 
 (defn- map-record->vec-record [record]
   (->> record
@@ -116,10 +117,10 @@
   (mount/start #'db)
   (mount/stop #'db)
 
-  (def schema [#:db{:ident :person/name
-                    :valueType :db.type/string
-                    :cardinality :db.cardinality/one
-                    :doc "The name of a person"}
+  (def schema [{:db/ident :person/name
+                :db/valueType :db.type/string
+                :db/cardinality :db.cardinality/one
+                :db/doc "The name of a person"}
 
                {:db/ident :person/age
                 :db/valueType :db.type/long
@@ -154,7 +155,7 @@
                 :db/doc "The URL where one can find out about the film"}])
 
   ;; Create the tables.
-  (doseq [command (create-table-commands schema)]
+  (doseq [command (create-table-commands :dbtype/sqlite schema)]
     (jdbc/execute! db command))
 
   (def data [{:person/name "Alice"

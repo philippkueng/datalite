@@ -12,7 +12,9 @@
 (defn on-start []
   (let [spec {:connection-uri db-uri}
         conn (jdbc/get-connection spec)]
-    (assoc spec :connection conn)))
+    (-> spec
+      (assoc :connection conn)
+      (assoc :dbtype :dbtype/sqlite))))
 
 (defn on-stop []
   (-> db :connection .close)

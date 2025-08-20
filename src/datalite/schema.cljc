@@ -19,7 +19,7 @@
 
 (defn- schema->fields-and-types
   "Helper function only considers single cardinality attributes."
-  [schema table]
+  [dbtype schema table]
   (->> schema
        (schema->attributes-of-table table)
        (only-single-cardinality-attributes)
@@ -28,34 +28,49 @@
                                name
                                replace-dashes-with-underlines)
                :field-type (condp = (:db/valueType attribute)
-                             :db.type/string "TEXT"
+                             :db.type/string (condp = dbtype
+                                               :dbtype/sqlite "TEXT"
+                                               :dbtype/duckdb "VARCHAR"
+                                               :dbtype/postgresql "VARCHAR")
+                             :db.type/keyword (condp = dbtype
+                                                :dbtype/sqlite "TEXT"
+                                                :dbtype/duckdb "VARCHAR"
+                                                :dbtype/postgresql "VARCHAR")
                              :db.type/long "INTEGER"
-                             :db.type/boolean "INTEGER")}))))
+                             :db.type/boolean "INTEGER"
+                             :db.type/ref "INTEGER")}))))
 
 (defn- join-table-attributes
   "Returns a sequence of maps describing join tables needed for many-to-many/ref attributes."
   [schema]
   (for [attr schema
         :when (and (= :db.cardinality/many (:db/cardinality attr))
-                   (= :db.type/ref (:db/valueType attr))
-                   (seq (:db/references attr)))]
+                (= :db.type/ref (:db/valueType attr))
+                (:db/references attr))]
     (let [tables (ordered-table-names [(namespace (:db/ident attr))
-                        (-> (:db/references attr) first namespace)])]
+                                       (-> (:db/references attr) namespace)])]
       {:name (utils/join-table-name (:db/ident attr))
        :columns (map #(str % "_id") tables)})))
 
 (defn create-table-commands
   "Turns a schema definition as required with Datomic into lists of creation commands. Example: 'CREATE TABLE person (age INTEGER, id INTEGER, name TEXT)'"
-  [schema]
-  (let [main-tables
+  [dbtype schema]
+  (let [sequence-statements (condp = dbtype
+                              :dbtype/duckdb (for [table (schema->tables schema)]
+                                               (format "CREATE SEQUENCE %s_id_seq" table))
+                              '())
+        main-tables
         (for [table (schema->tables schema)]
           (let [field-and-types-part (->> (cons
                                            {:field-name "id"
-                                            :field-type "INTEGER PRIMARY KEY AUTOINCREMENT"}
-                                           (schema->fields-and-types schema table))
-                                          (map (fn [{:keys [field-name field-type]}]
-                                                 (str field-name " " field-type)))
-                                          (str/join ", "))]
+                                            :field-type (condp = dbtype
+                                                          :dbtype/sqlite "INTEGER PRIMARY KEY AUTOINCREMENT"
+                                                          :dbtype/duckdb (format "INTEGER PRIMARY KEY DEFAULT nextval('%s_id_seq')" table)
+                                                          :dbtype/postgresql "INTEGER PRIMARY KEY GENERATED ALWAYS AS IDENTITY")}
+                                            (schema->fields-and-types dbtype schema table))
+                                       (map (fn [{:keys [field-name field-type]}]
+                                              (str field-name " " field-type)))
+                                       (str/join ", "))]
             (str "CREATE TABLE " table " (" field-and-types-part ")")))
         join-tables
         (for [{:keys [name columns]} (join-table-attributes schema)]
@@ -63,7 +78,7 @@
                " (" (str/join ", " (map #(str % " INTEGER") columns)) ")"))
         supporting-tables
         (list "CREATE TABLE schema (schema TEXT)")]
-    (concat main-tables join-tables supporting-tables)))
+    (concat sequence-statements main-tables join-tables supporting-tables)))
 
 (defn- schema->full-text-search-fields
   [schema table]
