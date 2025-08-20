@@ -46,11 +46,11 @@
 
 (defn create-tables!
   "Convenience functions to create all the tables required for supporting the schema"
-  [db schema]
+  [connection schema]
   (doseq [command (create-table-commands schema)]
-    (jdbc/execute! db command))
+    (jdbc/execute! connection command))
   (doseq [command (create-full-text-search-table-commands schema)]
-    (jdbc/execute! db command)))
+    (jdbc/execute! connection command)))
 
 (defn- map-record->vec-record [record]
   (->> record
