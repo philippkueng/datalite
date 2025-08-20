@@ -193,7 +193,7 @@
                        (str/join " " join-expressions))
 
                      ;; As we only got a single table to work with, leave the join part empty
-                     "")
+                     nil)
          where-clauses (->> (unconsumed-queries
                               index-enriched-where-clauses
                               @consumed-where-clauses)
