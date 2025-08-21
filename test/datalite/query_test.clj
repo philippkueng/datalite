@@ -1,30 +1,10 @@
 (ns datalite.query-test
   (:require [clojure.test :refer :all]
-            [datalite.core :refer [q create-tables! transact]]
-            [mount.core :as mount]
+            [datalite.core :refer [q transact]]
             [clojure.java.jdbc :as jdbc]
             [babashka.fs :refer [delete-if-exists]]))
 
-(def test-database "test.db")
-(def db-uri (str "jdbc:sqlite:" test-database))
-(declare conn)
-
-(defn on-start []
-  (let [spec {:connection-uri db-uri}
-        conn (jdbc/get-connection spec)]
-    (-> spec
-      (assoc :connection conn)
-      (assoc :dbtype :dbtype/sqlite))))
-
-(defn on-stop []
-  (-> conn :connection .close)
-  nil)
-
-(mount/defstate
-  ^{:on-reload :noop}
-  conn
-  :start (on-start)
-  :stop (on-stop))
+(def ^:dynamic *test-conn* nil)
 
 (def schema
   [#:db{:ident :person/name
@@ -65,37 +45,49 @@
         :cardinality :db.cardinality/one
         :doc "The URL where one can find out about the film"}])
 
-(comment
-  (mount/start #'conn)
-  (mount/stop #'conn))
+(defn setup-connection [dbtype db-uri]
+  (let [spec {:connection-uri db-uri}
+        conn (jdbc/get-connection spec)]
+    (-> spec
+      (assoc :connection conn)
+      (assoc :dbtype dbtype))))
 
 (defn teardown! []
-  (mount/stop #'conn)
-  (delete-if-exists test-database))
+  ;; so far not needed for in-memory databases
+  )
 
 (defn setup! []
   (teardown!)
-  (mount/start #'conn)
-  (transact conn {:tx-data schema})
-  (transact conn {:tx-data [{:person/name "Alice"
+  (transact *test-conn* {:tx-data schema})
+  (transact *test-conn* {:tx-data [{:person/name "Alice"
                              :person/age 29}
                             {:person/name "Bob"
                              :person/age 28}]})
-  (transact conn {:tx-data [{:film/title "Luca"
+  (transact *test-conn* {:tx-data [{:film/title "Luca"
                              :film/genre "Animation"
                              :film/release-year 2021
                              :film/url "https://www.themoviedb.org/movie/508943-luca?language=en-US"}]}))
 
+(def dbtypes-to-test [{:dbtype :dbtype/sqlite
+                       :db-uri "jdbc:sqlite::memory:"}
+                      {:dbtype :dbtype/duckdb
+                       :db-uri "jdbc:duckdb:memory:"}])
+
 (defn fixture [f]
-  (setup!)
-  (f)
-  (teardown!))
+  (doseq [{:keys [dbtype db-uri]} dbtypes-to-test]
+    (binding [*test-conn* (setup-connection dbtype db-uri)]
+      (try
+        (setup!)
+        (f)
+        (finally
+          (teardown!))))))
 
 (use-fixtures :once fixture)
 
 (deftest value-order-of-a-query-response
-  (let [result (q conn '[:find ?id ?name
+  (let [result (q *test-conn* '[:find ?id ?name
                          :where
                          [?e :person/name ?name]
                          [?e :person/id ?id]])]
-    (is (= #{[1 "Alice"] [2 "Bob"]} result))))
+    (is (= #{[1 "Alice"] [2 "Bob"]} result)
+      (format "dbtype=%s" (:dbtype *test-conn*)))))
