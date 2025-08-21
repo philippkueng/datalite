@@ -73,13 +73,13 @@
   (teardown!)
   (transact *test-conn* {:tx-data schema})
   (transact *test-conn* {:tx-data [{:person/name "Alice"
-                             :person/age 29}
-                            {:person/name "Bob"
-                             :person/age 28}]})
+                                    :person/age 29}
+                                   {:person/name "Bob"
+                                    :person/age 28}]})
   (transact *test-conn* {:tx-data [{:film/title "Luca"
-                             :film/genre "Animation"
-                             :film/release-year 2021
-                             :film/url "https://www.themoviedb.org/movie/508943-luca?language=en-US"}]}))
+                                    :film/genre "Animation"
+                                    :film/release-year 2021
+                                    :film/url "https://www.themoviedb.org/movie/508943-luca?language=en-US"}]}))
 
 (def dbtypes-to-test [{:dbtype :dbtype/sqlite
                        :db-uri "jdbc:sqlite::memory:"}
@@ -101,8 +101,8 @@
 
 (deftest value-order-of-a-query-response
   (let [result (q *test-conn* '[:find ?id ?name
-                         :where
-                         [?e :person/name ?name]
-                         [?e :person/id ?id]])]
+                                :where
+                                [?e :person/name ?name]
+                                [?e :person/id ?id]])]
     (is (= #{[1 "Alice"] [2 "Bob"]} result)
       (format "dbtype=%s" (:dbtype *test-conn*)))))
