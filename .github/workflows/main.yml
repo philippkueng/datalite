@@ -24,6 +24,16 @@ jobs:
 
     runs-on: ${{ matrix.os }}
 
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_DB: datalite-test
+          POSTGRES_USER: datalite
+          POSTGRES_PASSWORD: datalite
+        ports:
+          - 5432:5432
+
     # Steps represent a sequence of tasks that will be executed as part of the job
     steps:
       # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
@@ -52,7 +62,15 @@ jobs:
           cljstyle: 0.15.0             # cljstyle
           cmd-exe-workaround: 'latest' # Replaces `clojure` with `deps.clj` on Windows
           zprint: 1.2.3                # zprint
-        
+
+      - name: Ensure datalite-test database exists
+        run: |
+          until pg_isready -h localhost -p 5432 -U datalite; do sleep 1; done
+          psql -h localhost -U datalite -c "CREATE DATABASE \"datalite-test\";" || true
+        env:
+          PGPASSWORD: datalite
+
       - name: Run tests
         run: clojure -X:test
-       
+
+
