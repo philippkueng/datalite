@@ -37,11 +37,11 @@
         :cardinality :db.cardinality/one
         :doc "The age of a person"}
 
-   ;#:db{:ident :person/likes-films
-   ;     :valueType :db.type/ref
-   ;     :cardinality :db.cardinality/many
-   ;     :references #{:film/id}
-   ;     :doc "The films the person likes"}
+   #:db{:ident :person/likes-films
+        :valueType :db.type/ref
+        :cardinality :db.cardinality/many
+        :references :film/id
+        :doc "The films the person likes"}
 
    #:db{:ident :film/title
         :valueType :db.type/string
