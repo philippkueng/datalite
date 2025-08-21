@@ -53,8 +53,21 @@
       (assoc :dbtype dbtype))))
 
 (defn teardown! []
-  ;; so far not needed for in-memory databases
-  )
+  (let [{:keys [dbtype]} *test-conn*]
+    (cond
+      (= dbtype :dbtype/postgresql)
+      (let [tables (jdbc/query *test-conn*
+                     ["SELECT tablename FROM pg_tables WHERE schemaname = 'public'"])]
+        (doseq [{:keys [tablename]} tables]
+          (jdbc/execute! *test-conn* [(str "DROP TABLE IF EXISTS " tablename " CASCADE;")])))
+
+      ;; Skip teardown as we're working with in-memory databases.
+      (contains? #{:dbtype/sqlite :dbtype/duckdb} dbtype)
+      nil
+
+      :else
+      (println "Unknown dbtype, teardown skipped."))))
+
 
 (defn setup! []
   (teardown!)
@@ -71,7 +84,9 @@
 (def dbtypes-to-test [{:dbtype :dbtype/sqlite
                        :db-uri "jdbc:sqlite::memory:"}
                       {:dbtype :dbtype/duckdb
-                       :db-uri "jdbc:duckdb:memory:"}])
+                       :db-uri "jdbc:duckdb:memory:"}
+                      {:dbtype :dbtype/postgresql
+                       :db-uri "jdbc:postgresql://localhost:5432/datalite-test?user=datalite&password=datalite"}])
 
 (defn fixture [f]
   (doseq [{:keys [dbtype db-uri]} dbtypes-to-test]
