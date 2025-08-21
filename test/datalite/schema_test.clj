@@ -1,7 +1,11 @@
 (ns datalite.schema-test
   (:require [clojure.test :refer [deftest is]]
-            [datalite.schema :refer [create-table-commands]]
-            [clojure.set :as set]))
+            [datalite.schema :refer [create-schema-table-commands create-table-commands]]))
+
+(deftest datalite-required-table-commands
+  (let [expected-queries #{"CREATE TABLE schema (id INTEGER PRIMARY KEY AUTOINCREMENT, schema TEXT)"}
+        generated-queries (set (create-schema-table-commands :dbtype/sqlite))]
+    (is (= generated-queries expected-queries))))
 
 (deftest schema-to-table-commands-conversion
   (let [schema [#:db{:ident :person/name
@@ -43,7 +47,6 @@
                      :doc "The URL where one can find out about the film"}]
         expected-queries #{"CREATE TABLE person (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, age INTEGER)"
                            "CREATE TABLE film (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT, genre TEXT, release_year INTEGER, url TEXT)"
-                           "CREATE TABLE join_person_likes_films (film_id INTEGER, person_id INTEGER)"
-                           "CREATE TABLE schema (schema TEXT)"}
+                           "CREATE TABLE join_person_likes_films (film_id INTEGER, person_id INTEGER)"}
         generated-queries (set (create-table-commands :dbtype/sqlite schema))]
     (is (= generated-queries expected-queries))))

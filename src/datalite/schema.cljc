@@ -52,6 +52,19 @@
       {:name (utils/join-table-name (:db/ident attr))
        :columns (map #(str % "_id") tables)})))
 
+(defn create-schema-table-commands
+  "Generates the SQL commands for the required database to track schemas"
+  [dbtype]
+  (->> (list
+         (when (= :dbtype/duckdb dbtype)
+           "CREATE SEQUENCE schema_id_seq")
+         (format "CREATE TABLE schema (id %s, schema TEXT)"
+           (condp = dbtype
+             :dbtype/sqlite "INTEGER PRIMARY KEY AUTOINCREMENT"
+             :dbtype/duckdb "INTEGER PRIMARY KEY DEFAULT nextval('schema_id_seq')"
+             :dbtype/postgresql "INTEGER PRIMARY KEY GENERATED ALWAYS AS IDENTITY")))
+    (remove nil?)))
+
 (defn create-table-commands
   "Turns a schema definition as required with Datomic into lists of creation commands. Example: 'CREATE TABLE person (age INTEGER, id INTEGER, name TEXT)'"
   [dbtype schema]
@@ -75,10 +88,8 @@
         join-tables
         (for [{:keys [name columns]} (join-table-attributes schema)]
           (str "CREATE TABLE " name
-               " (" (str/join ", " (map #(str % " INTEGER") columns)) ")"))
-        supporting-tables
-        (list "CREATE TABLE schema (schema TEXT)")]
-    (concat sequence-statements main-tables join-tables supporting-tables)))
+               " (" (str/join ", " (map #(str % " INTEGER") columns)) ")"))]
+    (concat sequence-statements main-tables join-tables)))
 
 (defn- schema->full-text-search-fields
   [schema table]
