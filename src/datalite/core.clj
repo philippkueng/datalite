@@ -1,12 +1,13 @@
 (ns datalite.core
   (:require
-   [datalite.utils :refer [replace-dashes-with-underlines]]
-   [datalite.schema :refer [create-table-commands
+    [clojure.set :as set]
+    [datalite.utils :refer [replace-dashes-with-underlines]]
+    [datalite.schema :refer [create-table-commands
                             drop-table-commands
-                            create-full-text-search-table-commands]]
-   [datalite.query-conversion :refer [datalog->sql]]
-   [mount.core :as mount]
-   [clojure.java.jdbc :as jdbc]))
+                            create-full-text-search-table-commands] :as schema]
+    [datalite.query-conversion :refer [datalog->sql]]
+    [mount.core :as mount]
+    [clojure.java.jdbc :as jdbc]))
 
 (def db-uri "jdbc:sqlite:sample.db")
 (declare db)
@@ -26,6 +27,27 @@
   :start (on-start)
   :stop (on-stop))
 
+(defn ensure-required-tables!
+  "Checks if the required tables exist and if not creates them."
+  [{:keys [dbtype] :as connection}]
+  (let [table-check-sql
+        (case dbtype
+          :dbtype/sqlite ["SELECT name FROM sqlite_master WHERE type='table' AND name IN (?, ?)" "schema" "transactions"]
+          :dbtype/postgresql ["SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' AND table_name IN (?, ?)" "schema" "transactions"]
+          :dbtype/duckdb ["SELECT table_name FROM information_schema.tables WHERE table_schema = 'main' AND table_name IN (?, ?)" "schema" "transactions"]
+          (throw (ex-info "Unsupported dbtype" {:dbtype dbtype})))
+        ;; The key for table name may differ by DB, so adjust as needed:
+        table-key (case dbtype
+                    :dbtype/sqlite :name
+                    :dbtype/postgresql :table_name
+                    :dbtype/duckdb :table_name)
+        existing-tables (set (map table-key (jdbc/query connection table-check-sql)))
+        required-tables #{"schema" #_"transactions"}
+        missing-tables (clojure.set/difference required-tables existing-tables)]
+    (when (seq missing-tables)
+      (doseq [cmd (schema/create-schema-table-commands dbtype)]
+        (jdbc/execute! connection cmd)))))
+
 (defn create-tables!
   "Convenience functions to create all the tables required for supporting the schema"
   [connection schema]
@@ -40,6 +62,7 @@
   "Turn lists of maps into insert calls"
   [connection {:keys [tx-data] :as data}]
   (assert (some? tx-data) "The data to be added must be wrapped within a :tx-data map")
+  (ensure-required-tables! connection)
   ;; Check if the tx-data is a schema
   (if (every? #(some? (:db/ident %)) tx-data)
     (create-tables! connection tx-data)
