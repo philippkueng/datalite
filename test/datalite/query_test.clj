@@ -76,15 +76,15 @@
 (defn setup! []
   (teardown!)
   (mount/start #'conn)
-  (create-tables! conn schema)
-  (transact conn [{:person/name "Alice"
-                   :person/age 29}
-                  {:person/name "Bob"
-                   :person/age 28}])
-  (transact conn [{:film/title "Luca"
-                   :film/genre "Animation"
-                   :film/release-year 2021
-                   :film/url "https://www.themoviedb.org/movie/508943-luca?language=en-US"}]))
+  (transact conn {:tx-data schema})
+  (transact conn {:tx-data [{:person/name "Alice"
+                             :person/age 29}
+                            {:person/name "Bob"
+                             :person/age 28}]})
+  (transact conn {:tx-data [{:film/title "Luca"
+                             :film/genre "Animation"
+                             :film/release-year 2021
+                             :film/url "https://www.themoviedb.org/movie/508943-luca?language=en-US"}]}))
 
 (defn fixture [f]
   (setup!)

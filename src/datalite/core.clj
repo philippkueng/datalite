@@ -26,24 +26,6 @@
   :start (on-start)
   :stop (on-stop))
 
-(defn transact
-  "Turn lists of maps into insert calls"
-  [connection data]
-  (doseq [entry data]
-    ;; TODO: 11.06.2022 assuming that the map correlates to a single table insert.
-    (let [table-name (->> entry keys first namespace)]
-      (jdbc/insert! connection
-
-        ;; table-name
-                    (keyword table-name)
-
-        ;; remove-namespaces-from-map
-                    (reduce (fn [non-namespaced-entry namespaced-key]
-                              (conj non-namespaced-entry
-                                    {(-> namespaced-key name replace-dashes-with-underlines keyword) (namespaced-key entry)}))
-                            {}
-                            (keys entry))))))
-
 (defn create-tables!
   "Convenience functions to create all the tables required for supporting the schema"
   [connection schema]
@@ -52,6 +34,29 @@
   (when (= :dbtype/sqlite (:dbtype connection))
     (doseq [command (create-full-text-search-table-commands schema)]
       (jdbc/execute! connection command))))
+
+
+(defn transact
+  "Turn lists of maps into insert calls"
+  [connection {:keys [tx-data] :as data}]
+  (assert (some? tx-data) "The data to be added must be wrapped within a :tx-data map")
+  ;; Check if the tx-data is a schema
+  (if (every? #(some? (:db/ident %)) tx-data)
+    (create-tables! connection tx-data)
+    (doseq [entry tx-data]
+      ;; TODO: 11.06.2022 assuming that the map correlates to a single table insert.
+      (let [table-name (->> entry keys first namespace)]
+        (jdbc/insert! connection
+
+          ;; table-name
+          (keyword table-name)
+
+          ;; remove-namespaces-from-map
+          (reduce (fn [non-namespaced-entry namespaced-key]
+                    (conj non-namespaced-entry
+                      {(-> namespaced-key name replace-dashes-with-underlines keyword) (namespaced-key entry)}))
+            {}
+            (keys entry)))))))
 
 (defn- map-record->vec-record [record]
   (->> record
@@ -169,8 +174,8 @@
                :film/url "https://www.themoviedb.org/movie/508943-luca?language=en-US"}])
 
   #_(jdbc/insert! db :person {:id 12 :name "Alice" :age 29})
-  (transact db data)
-  (transact db films)
+  (transact db {:tx-data data})
+  (transact db {:tx-data films})
 
   ;; Drop the tables.
   (doseq [command (drop-table-commands schema)]
