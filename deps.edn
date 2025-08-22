@@ -1,6 +1,9 @@
 {:deps {org.clojure/clojure {:mvn/version "1.12.1"}
         io.lambdaforge/datalog-parser {:mvn/version "0.1.11"}
 
+        ;; used for serializing
+        com.cognitect/transit-clj {:mvn/version "1.0.333"}
+
         ;; database libraries, to be refactored out into their own library.
         org.clojure/java.jdbc {:mvn/version "0.7.12"}
         org.xerial/sqlite-jdbc {:mvn/version "3.50.3.0"}

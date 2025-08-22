@@ -3,7 +3,7 @@
             [datalite.schema :refer [create-schema-table-commands create-table-commands]]))
 
 (deftest datalite-required-table-commands
-  (let [expected-queries #{"CREATE TABLE schema (id INTEGER PRIMARY KEY AUTOINCREMENT, schema TEXT)"}
+  (let [expected-queries #{"CREATE TABLE schema (id INTEGER PRIMARY KEY AUTOINCREMENT, schema BLOB)"}
         generated-queries (set (create-schema-table-commands :dbtype/sqlite))]
     (is (= generated-queries expected-queries))))
 

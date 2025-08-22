@@ -6,6 +6,7 @@
                             drop-table-commands
                             create-full-text-search-table-commands] :as schema]
     [datalite.query-conversion :refer [datalog->sql]]
+    [datalite.serialisation :refer [encode decode]]
     [mount.core :as mount]
     [clojure.java.jdbc :as jdbc]))
 
@@ -63,9 +64,15 @@
   [connection {:keys [tx-data] :as data}]
   (assert (some? tx-data) "The data to be added must be wrapped within a :tx-data map")
   (ensure-required-tables! connection)
-  ;; Check if the tx-data is a schema
+  ;; Check if the tx-data is a schema (my assumption is that transact is either called with schema information or data but not mixed)
   (if (every? #(some? (:db/ident %)) tx-data)
-    (create-tables! connection tx-data)
+    (do
+      ;; Persist the schema.
+      (jdbc/insert! connection :schema {:schema (encode tx-data :msgpack)})
+
+      ;; Apply the schema.
+      (create-tables! connection tx-data))
+
     (doseq [entry tx-data]
       ;; TODO: 11.06.2022 assuming that the map correlates to a single table insert.
       (let [table-name (->> entry keys first namespace)]
@@ -106,8 +113,11 @@
 
 (defn q
   [connection datalog-query]
-  (let [datalog-sql (datalog->sql datalog-query)]
-    (->> (datalog->sql datalog-query)
+  (let [schema (-> (jdbc/query connection "select * from schema limit 1")
+                 first
+                 :schema
+                 (decode :msgpack))]
+    (->> (datalog->sql schema datalog-query)
          (jdbc/query connection)
          jdbc-response->datomic-response)))
 

@@ -58,11 +58,15 @@
   (->> (list
          (when (= :dbtype/duckdb dbtype)
            "CREATE SEQUENCE schema_id_seq")
-         (format "CREATE TABLE schema (id %s, schema TEXT)"
+         (format "CREATE TABLE schema (id %s, schema %s)"
            (condp = dbtype
              :dbtype/sqlite "INTEGER PRIMARY KEY AUTOINCREMENT"
              :dbtype/duckdb "INTEGER PRIMARY KEY DEFAULT nextval('schema_id_seq')"
-             :dbtype/postgresql "INTEGER PRIMARY KEY GENERATED ALWAYS AS IDENTITY")))
+             :dbtype/postgresql "INTEGER PRIMARY KEY GENERATED ALWAYS AS IDENTITY")
+           (condp = dbtype
+             :dbtype/sqlite "BLOB"
+             :dbtype/duckdb "BLOB"
+             :dbtype/postgresql "BYTEA")))
     (remove nil?)))
 
 (defn create-table-commands
