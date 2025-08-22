@@ -11,24 +11,6 @@
     [mount.core :as mount]
     [clojure.java.jdbc :as jdbc]))
 
-(def db-uri "jdbc:sqlite:sample.db")
-(declare db)
-
-(defn on-start []
-  (let [spec {:connection-uri db-uri}
-        conn (jdbc/get-connection spec)]
-    (assoc spec :connection conn)))
-
-(defn on-stop []
-  (-> db :connection .close)
-  nil)
-
-(mount/defstate
-  ^{:on-reload :noop}
-  db
-  :start (on-start)
-  :stop (on-stop))
-
 (defn ensure-required-tables!
   "Checks if the required tables exist and if not creates them."
   [{:keys [dbtype] :as connection}]
