@@ -47,6 +47,10 @@
   [connection {:keys [tx-data] :as data}]
   (assert (some? tx-data) "The data to be added must be wrapped within a :tx-data map")
   (ensure-required-tables! connection)
+
+  ;; Persist the transactions' tx-data into the transactions table
+  (jdbc/insert! connection (keyword transactions-table-name) {:data (encode tx-data :msgpack)})
+
   ;; Check if the tx-data is a schema (my assumption is that transact is either called with schema information or data but not mixed)
   (if (every? #(some? (:db/ident %)) tx-data)
     (do
