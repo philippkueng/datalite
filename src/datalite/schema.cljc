@@ -56,32 +56,35 @@
 (defn create-internal-table-commands
   "Generates the SQL commands for the required database to track schemas"
   [dbtype]
-  (->> (list
-         (when (= :dbtype/duckdb dbtype)
-           (format "CREATE SEQUENCE %s_id_seq" schema-table-name))
-         (format "CREATE TABLE %s (id %s, schema %s)"
-           schema-table-name
-           (condp = dbtype
-             :dbtype/sqlite "INTEGER PRIMARY KEY AUTOINCREMENT"
-             :dbtype/duckdb (format "INTEGER PRIMARY KEY DEFAULT nextval('%s_id_seq')" schema-table-name)
-             :dbtype/postgresql "INTEGER PRIMARY KEY GENERATED ALWAYS AS IDENTITY")
-           (condp = dbtype
-             :dbtype/sqlite "BLOB"
-             :dbtype/duckdb "BLOB"
-             :dbtype/postgresql "BYTEA"))
-         (when (= :dbtype/duckdb dbtype)
-           (format "CREATE SEQUENCE %s_id_seq" transactions-table-name))
-         (format "CREATE TABLE %s (id %s, data %s)"
-           transactions-table-name
-           (condp = dbtype
-             :dbtype/sqlite "INTEGER PRIMARY KEY AUTOINCREMENT"
-             :dbtype/duckdb (format "INTEGER PRIMARY KEY DEFAULT nextval('%s_id_seq')" transactions-table-name)
-             :dbtype/postgresql "INTEGER PRIMARY KEY GENERATED ALWAYS AS IDENTITY")
-           (condp = dbtype
-             :dbtype/sqlite "BLOB"
-             :dbtype/duckdb "BLOB"
-             :dbtype/postgresql "BYTEA")))
-    (remove nil?)))
+  (let [id-type (fn [sequence-prefix]
+                  (condp = dbtype
+                    :dbtype/sqlite "INTEGER PRIMARY KEY AUTOINCREMENT"
+                    :dbtype/duckdb (format "INTEGER PRIMARY KEY DEFAULT nextval('%s_id_seq')" sequence-prefix)
+                    :dbtype/postgresql "INTEGER PRIMARY KEY GENERATED ALWAYS AS IDENTITY"))
+        blob-type (condp = dbtype
+                    :dbtype/sqlite "BLOB"
+                    :dbtype/duckdb "BLOB"
+                    :dbtype/postgresql "BYTEA")
+        timestamp-type (condp = dbtype
+                         :dbtype/sqlite "DATETIME DEFAULT (CURRENT_TIMESTAMP)"
+                         :dbtype/duckdb "TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP"
+                         :dbtype/postgresql "TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP")]
+    (->> (list
+           (when (= :dbtype/duckdb dbtype)
+             (format "CREATE SEQUENCE %s_id_seq" schema-table-name))
+           (format "CREATE TABLE %s (id %s, schema %s, tx_time %s)"
+             schema-table-name
+             (id-type schema-table-name)
+             blob-type
+             timestamp-type)
+           (when (= :dbtype/duckdb dbtype)
+             (format "CREATE SEQUENCE %s_id_seq" transactions-table-name))
+           (format "CREATE TABLE %s (id %s, data %s, tx_time %s)"
+             transactions-table-name
+             (id-type schema-table-name)
+             blob-type
+             timestamp-type))
+      (remove nil?))))
 
 (defn create-table-commands
   "Turns a schema definition as required with Datomic into lists of creation commands. Example: 'CREATE TABLE person (age INTEGER, id INTEGER, name TEXT)'"

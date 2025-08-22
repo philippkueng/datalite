@@ -3,8 +3,8 @@
             [datalite.schema :refer [create-internal-table-commands create-table-commands]]))
 
 (deftest datalite-required-table-commands
-  (let [expected-queries #{"CREATE TABLE dl_schema (id INTEGER PRIMARY KEY AUTOINCREMENT, schema BLOB)"
-                           "CREATE TABLE dl_transactions (id INTEGER PRIMARY KEY AUTOINCREMENT, data BLOB)"}
+  (let [expected-queries #{"CREATE TABLE dl_schema (id INTEGER PRIMARY KEY AUTOINCREMENT, schema BLOB, tx_time DATETIME DEFAULT (CURRENT_TIMESTAMP))"
+                           "CREATE TABLE dl_transactions (id INTEGER PRIMARY KEY AUTOINCREMENT, data BLOB, tx_time DATETIME DEFAULT (CURRENT_TIMESTAMP))"}
         generated-queries (set (create-internal-table-commands :dbtype/sqlite))]
     (is (= generated-queries expected-queries))))
 
