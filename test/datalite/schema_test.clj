@@ -1,10 +1,11 @@
 (ns datalite.schema-test
   (:require [clojure.test :refer [deftest is]]
-            [datalite.schema :refer [create-schema-table-commands create-table-commands]]))
+            [datalite.schema :refer [create-internal-table-commands create-table-commands]]))
 
 (deftest datalite-required-table-commands
-  (let [expected-queries #{"CREATE TABLE schema (id INTEGER PRIMARY KEY AUTOINCREMENT, schema BLOB)"}
-        generated-queries (set (create-schema-table-commands :dbtype/sqlite))]
+  (let [expected-queries #{"CREATE TABLE dl_schema (id INTEGER PRIMARY KEY AUTOINCREMENT, schema BLOB)"
+                           "CREATE TABLE dl_transactions (id INTEGER PRIMARY KEY AUTOINCREMENT, data BLOB)"}
+        generated-queries (set (create-internal-table-commands :dbtype/sqlite))]
     (is (= generated-queries expected-queries))))
 
 (deftest schema-to-table-commands-conversion

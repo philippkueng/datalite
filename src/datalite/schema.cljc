@@ -1,5 +1,6 @@
 (ns datalite.schema
-  (:require [datalite.utils :as utils :refer [replace-dashes-with-underlines ordered-table-names]]
+  (:require [datalite.config :refer [schema-table-name transactions-table-name]]
+            [datalite.utils :as utils :refer [replace-dashes-with-underlines ordered-table-names]]
             [clojure.string :as str]))
 
 (defn- schema->tables
@@ -52,16 +53,29 @@
       {:name (utils/join-table-name (:db/ident attr))
        :columns (map #(str % "_id") tables)})))
 
-(defn create-schema-table-commands
+(defn create-internal-table-commands
   "Generates the SQL commands for the required database to track schemas"
   [dbtype]
   (->> (list
          (when (= :dbtype/duckdb dbtype)
-           "CREATE SEQUENCE schema_id_seq")
-         (format "CREATE TABLE schema (id %s, schema %s)"
+           (format "CREATE SEQUENCE %s_id_seq" schema-table-name))
+         (format "CREATE TABLE %s (id %s, schema %s)"
+           schema-table-name
            (condp = dbtype
              :dbtype/sqlite "INTEGER PRIMARY KEY AUTOINCREMENT"
-             :dbtype/duckdb "INTEGER PRIMARY KEY DEFAULT nextval('schema_id_seq')"
+             :dbtype/duckdb (format "INTEGER PRIMARY KEY DEFAULT nextval('%s_id_seq')" schema-table-name)
+             :dbtype/postgresql "INTEGER PRIMARY KEY GENERATED ALWAYS AS IDENTITY")
+           (condp = dbtype
+             :dbtype/sqlite "BLOB"
+             :dbtype/duckdb "BLOB"
+             :dbtype/postgresql "BYTEA"))
+         (when (= :dbtype/duckdb dbtype)
+           (format "CREATE SEQUENCE %s_id_seq" transactions-table-name))
+         (format "CREATE TABLE %s (id %s, data %s)"
+           transactions-table-name
+           (condp = dbtype
+             :dbtype/sqlite "INTEGER PRIMARY KEY AUTOINCREMENT"
+             :dbtype/duckdb (format "INTEGER PRIMARY KEY DEFAULT nextval('%s_id_seq')" transactions-table-name)
              :dbtype/postgresql "INTEGER PRIMARY KEY GENERATED ALWAYS AS IDENTITY")
            (condp = dbtype
              :dbtype/sqlite "BLOB"

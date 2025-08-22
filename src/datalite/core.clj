@@ -1,6 +1,7 @@
 (ns datalite.core
   (:require
     [clojure.set :as set]
+    [datalite.config :refer [schema-table-name transactions-table-name]]
     [datalite.utils :refer [replace-dashes-with-underlines]]
     [datalite.schema :refer [create-table-commands
                             drop-table-commands
@@ -33,9 +34,9 @@
   [{:keys [dbtype] :as connection}]
   (let [table-check-sql
         (case dbtype
-          :dbtype/sqlite ["SELECT name FROM sqlite_master WHERE type='table' AND name IN (?, ?)" "schema" "transactions"]
-          :dbtype/postgresql ["SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' AND table_name IN (?, ?)" "schema" "transactions"]
-          :dbtype/duckdb ["SELECT table_name FROM information_schema.tables WHERE table_schema = 'main' AND table_name IN (?, ?)" "schema" "transactions"]
+          :dbtype/sqlite ["SELECT name FROM sqlite_master WHERE type='table' AND name IN (?, ?)" schema-table-name transactions-table-name]
+          :dbtype/postgresql ["SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' AND table_name IN (?, ?)" schema-table-name transactions-table-name]
+          :dbtype/duckdb ["SELECT table_name FROM information_schema.tables WHERE table_schema = 'main' AND table_name IN (?, ?)" schema-table-name transactions-table-name]
           (throw (ex-info "Unsupported dbtype" {:dbtype dbtype})))
         ;; The key for table name may differ by DB, so adjust as needed:
         table-key (case dbtype
@@ -43,10 +44,10 @@
                     :dbtype/postgresql :table_name
                     :dbtype/duckdb :table_name)
         existing-tables (set (map table-key (jdbc/query connection table-check-sql)))
-        required-tables #{"schema" #_"transactions"}
+        required-tables #{schema-table-name transactions-table-name}
         missing-tables (clojure.set/difference required-tables existing-tables)]
     (when (seq missing-tables)
-      (doseq [cmd (schema/create-schema-table-commands dbtype)]
+      (doseq [cmd (schema/create-internal-table-commands dbtype)]
         (jdbc/execute! connection cmd)))))
 
 (defn create-tables!
@@ -68,7 +69,7 @@
   (if (every? #(some? (:db/ident %)) tx-data)
     (do
       ;; Persist the schema.
-      (jdbc/insert! connection :schema {:schema (encode tx-data :msgpack)})
+      (jdbc/insert! connection (keyword schema-table-name) {:schema (encode tx-data :msgpack)})
 
       ;; Apply the schema.
       (create-tables! connection tx-data))
@@ -113,7 +114,7 @@
 
 (defn q
   [connection datalog-query]
-  (let [schema (-> (jdbc/query connection "select * from schema limit 1")
+  (let [schema (-> (jdbc/query connection (format "select * from %s limit 1" schema-table-name))
                  first
                  :schema
                  (decode :msgpack))]
