@@ -100,8 +100,13 @@
                        WHERE film.release_year = 1985")]
     (is (= sql-query (datalog->sql datalog-query)))))
 
-#_(deftest simple-filter-query-against-multiple-joined-entities
-    (let [datalog-query '[:find ?person-name ?title ?year ?genre
+(deftest simple-filter-query-against-multiple-joined-entities
+    (let [schema [#:db{:ident :person/likes-films
+                       :valueType :db.type/ref
+                       :cardinality :db.cardinality/many
+                       :references :film/id                 ;; an addition that isn't needed by Datomic but helps us
+                       :doc "The films the person likes"}]
+          datalog-query '[:find ?person-name ?title ?year ?genre
                           :where
                           [?e :film/title ?title]
                           [?e :film/release-year ?year]
@@ -121,7 +126,7 @@
                        JOIN join_person_likes_films ON join_person_likes_films.film_id = film.id
                        JOIN person ON join_person_likes_films.person_id = person.id
                        WHERE film.release_year = 1985")]
-      (is (= sql-query (datalog->sql datalog-query)))))
+      (is (= sql-query (datalog->sql schema datalog-query)))))
 
 (comment
   (run-tests)

@@ -131,12 +131,18 @@
                                                              (-> clause
                                                                (assoc :attribute attribute)
                                                                (assoc :from-table (-> attribute namespace))
-                                                               (assoc :from-column (-> attribute name))
+                                                               (assoc :from-column "id" #_(-> attribute name))
                                                                (assoc :to-table (-> matching-schema-clause :db/references (namespace)))
                                                                (assoc :to-column (-> matching-schema-clause :db/references (name))))))))
                            ;_enriched-where-clauses (clojure.pprint/pprint enriched-where-clauses)
-                           from-table "film"
-                           join-expressions (loop [join-expressions []
+                           tables-involved-in-query (->> enriched-where-clauses
+                                                      (map #(list (:from-table %) (:to-table %)))
+                                                      flatten
+                                                      sort)
+                           ;; Not having a better idea, we'll take all the tables in involved in a query and take the
+                           ;;  appearing first in the alphabet for the `from-table`.
+                           from-table (first tables-involved-in-query)
+                           join-expressions (loop [join-expressions [] ;; the place we're accumulating SQL expressions.
                                                    existing-tables #{from-table}
                                                    where-clauses enriched-where-clauses]
                                               (if (> (count where-clauses) 0)
@@ -150,42 +156,39 @@
                                                       ;_where-clauses (clojure.pprint/pprint where-clauses)
                                                       ;_end (println "ITERATION END ----")
                                                       ]
-                                                  ;(Thread/sleep 3000)
                                                   (swap! consumed-where-clauses conj (:index clause-to-add))
                                                   (recur
                                                     (conj join-expressions
-                                                      (->> (list
-                                                             (format "JOIN %s ON %s.%s = %s.%s"
-                                                               (utils/join-table-name (:attribute clause-to-add))
-                                                               (:from-table clause-to-add)
-                                                               (:from-column clause-to-add)
-                                                               (:to-table clause-to-add)
-                                                               (:to-column clause-to-add))
-                                                             ;; figure out which of the tables this joins is already present
-                                                             (when (not (contains? existing-tables (:from-table clause-to-add)))
-                                                               (format "JOIN %s on %s.%s = %s.%s"
-                                                                 (:from-table clause-to-add)
-                                                                 (:from-table clause-to-add)
-                                                                 (:from-column clause-to-add)
-                                                                 (:to-table clause-to-add)
-                                                                 (:to-column clause-to-add)))
-                                                             (when (not (contains? existing-tables (:to-table clause-to-add)))
-                                                               (format "JOIN %s on %s.%s = %s.%s"
-                                                                 (:to-table clause-to-add)
-                                                                 (:from-table clause-to-add)
-                                                                 (:from-column clause-to-add)
-                                                                 (:to-table clause-to-add)
-                                                                 (:to-column clause-to-add))))
-                                                        (remove nil?)))
+                                                      (let [table-pair #{(:from-table clause-to-add)
+                                                                         (:to-table clause-to-add)}
+                                                            first-table-to-join (-> table-pair
+                                                                                  (set/intersection existing-tables)
+                                                                                  first)
+                                                            second-table-to-join (-> table-pair
+                                                                                   (set/difference #{first-table-to-join})
+                                                                                   first)]
+                                                        (->> (list
+                                                               ;; In the first join operation we want to link against an already mentioned table -> `first-table-to-join`.
+                                                               (format "JOIN %s ON %s.%s = %s.%s"
+                                                                 (utils/join-table-name (:attribute clause-to-add))
+                                                                 (utils/join-table-name (:attribute clause-to-add))
+                                                                 (format "%s_id" (utils/replace-dashes-with-underlines first-table-to-join))
+                                                                 (utils/replace-dashes-with-underlines first-table-to-join)
+                                                                 (utils/replace-dashes-with-underlines (:from-column clause-to-add)))
+                                                               (format "JOIN %s ON %s.%s = %s.%s"
+                                                                 second-table-to-join
+                                                                 (utils/join-table-name (:attribute clause-to-add))
+                                                                 (format "%s_id" (utils/replace-dashes-with-underlines second-table-to-join))
+                                                                 (utils/replace-dashes-with-underlines second-table-to-join)
+                                                                 "id"))
+                                                          (remove nil?))))
 
                                                     (set/union existing-tables #{(-> clause-to-add :from-table) (-> clause-to-add :to-table)})
 
                                                     (->> where-clauses
                                                       (remove #(= (:index %) (:index clause-to-add))))))
 
-                                                (flatten join-expressions)))
-                           ;_print-join-expressions (clojure.pprint/pprint join-expressions)
-                           ]
+                                                (flatten join-expressions)))]
 
                        ;; todo with this information we can construct the join of the tables, however how do we ensure the source table is also included?
                        ;;  should we do the `join` part prior to the `from` part, and then put the table into the `from` part which hasn't been mentioned elsewhere?
@@ -218,37 +221,53 @@
   ([query] (datalog->sql [] query)))
 
 
-(comment
+;; my testing query
+(datalog->sql [#:db{:ident :person/likes-films
+                    :valueType :db.type/ref
+                    :cardinality :db.cardinality/many
+                    :references :film/id                    ;; an addition that isn't needed by Datomic but helps us
+                    :doc "The films the person likes"}
+               #:db{:ident :person/lives-at
+                    :valueType :db.type/ref
+                    :cardinality :db.cardinality/many
+                    :references :location/id
+                    :doc "The locations the person lives at"}
+               #:db{:ident :location/country
+                    :valueType :db.type/ref
+                    :cardinality :db.cardinality/one
+                    :references :country/id
+                    :doc "The country a particular location is in"}]
+  '[:find ?person-name ?country-name ?title ?year ?genre
+    :where
+    [?e :film/title ?title]
+    [?e :film/release-year ?year]
+    [?e :film/genre ?genre]
 
-  (datalog->sql [#:db{:ident :person/likes-films
-                      :valueType :db.type/ref
-                      :cardinality :db.cardinality/many
-                      :references :film/id                  ;; an addition that isn't needed by Datomic but helps us
-                      :doc "The films the person likes"}
-                 #:db{:ident :person/lives-at
-                      :valueType :db.type/ref
-                      :cardinality :db.cardinality/many
-                      :references :location/id
-                      :doc "The locations the person lives at"}
-                 #:db{:ident :location/country
-                      :valueType :db.type/ref
-                      :cardinality :db.cardinality/one
-                      :references :country/id
-                      :doc "The country a particular location is in"}]
-    '[:find ?person-name ?country-name ?title ?year ?genre
-      :where
-      [?e :film/title ?title]
-      [?e :film/release-year ?year]
-      [?e :film/genre ?genre]
+    [?p :person/name ?person-name]
+    [?p :person/likes-films ?e]
 
-      [?p :person/name ?person-name]
-      [?p :person/likes-films ?e]
+    [?p :person/lives-at ?l]
+    [?l :location/country ?c]
+    [?c :country/name ?country-name]
 
-      [?p :person/lives-at ?l]
-      [?l :location/country ?c]
-      [?c :country/name ?country-name]
+    [?e :film/release-year 1985]])
 
-      [?e :film/release-year 1985]]))
+;;
+;; FROM country
+;;
+;; JOIN join_location_country ON join_location_country.country_id = country.id
+;; JOIN location ON join_location_country.location_id = location.id
+;;
+;; JOIN join_person_lives_at ON join_person_lives_at.location_id = location.id
+;; JOIN person ON join_person_lives_at.person_id = person.id
+;;
+;; JOIN join_person_likes_films ON join_person_likes_films.person_id = person.id
+;; JOIN film ON join_person_likes_films ON person_likes_films.film_id = film.id
+;;
+;; 1. pick a random table (we pick the one by alphabetical sorting)
+;; 2. find a table that joins with it
+;;    JOIN <the-join-table>
+;;
 
 (comment
 

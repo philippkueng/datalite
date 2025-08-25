@@ -90,7 +90,11 @@
   (transact *test-conn* {:tx-data [{:film/title "Luca"
                                     :film/genre "Animation"
                                     :film/release-year 2021
-                                    :film/url "https://www.themoviedb.org/movie/508943-luca?language=en-US"}]}))
+                                    :film/url "https://www.themoviedb.org/movie/508943-luca?language=en-US"}]})
+
+  ;; fixme manually insert the relationship for now to test the join queries
+  (jdbc/insert! *test-conn* :join_person_likes_films {:person_id 1
+                                                      :film_id 1}))
 
 (def dbtypes-to-test [{:dbtype :dbtype/sqlite
                        :db-uri "jdbc:sqlite::memory:"}
@@ -116,4 +120,14 @@
                                 [?e :person/name ?name]
                                 [?e :person/id ?id]])]
     (is (= #{[1 "Alice"] [2 "Bob"]} result)
+      (format "dbtype=%s" (:dbtype *test-conn*)))))
+
+(deftest a-simple-join-query
+  (let [result (q *test-conn* '[:find ?id ?person-name ?film-name
+                                :where
+                                [?p :person/name ?person-name]
+                                [?p :person/id ?id]
+                                [?p :person/likes-films ?f]
+                                [?f :film/title ?film-name]])]
+    (is (= #{[1 "Alice" "Luca"]} result)
       (format "dbtype=%s" (:dbtype *test-conn*)))))
