@@ -130,4 +130,11 @@
                                 [?p :person/likes-films ?f]
                                 [?f :film/title ?film-name]])]
     (is (= #{[1 "Alice" "Luca"]} result)
-      (format "dbtype=%s" (:dbtype *test-conn*)))))
+      (format "dbtype=%s" (:dbtype *test-conn*)))
+    (is (= result (q *test-conn* '[:find ?person-id ?person-name ?film-name
+                                   :where
+                                   [?f :film/title ?film-name]
+                                   [?p :person/likes-films ?f]
+                                   [?p :person/name ?person-name]
+                                   [?p :person/id ?person-id]]))
+      (format "dbtype=%s - results aren't equal" (:dbtype *test-conn*)))))
