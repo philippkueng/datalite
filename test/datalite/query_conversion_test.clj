@@ -128,6 +128,25 @@
                        WHERE film.release_year = 1985")]
       (is (= sql-query (datalog->sql schema datalog-query)))))
 
+(deftest filter-query-against-cardinality-one-joined-entities
+  (let [schema [#:db{:ident :film/directed-by
+                     :valueType :db.type/ref
+                     :cardinality :db.cardinality/one
+                     :references :person/id                 ;; an addition that isn't needed by Datomic but helps us
+                     :doc "The person who directed this film"}]
+        datalog-query '[:find ?person-name ?film-title
+                        :where
+                        [?f :film/title ?film-title]
+                        [?f :film/directed-by ?p]
+                        [?p :person/name ?person-name]]
+        sql-query (remove-line-breaks-and-trim
+                    "SELECT
+                      person.name as field_000,
+                      film.title as field_001
+                     FROM film
+                     JOIN person ON film.directed_by = person.id")]
+    (is (= sql-query (datalog->sql schema datalog-query)))))
+
 (comment
   (run-tests)
   )

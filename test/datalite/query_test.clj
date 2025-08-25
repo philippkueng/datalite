@@ -54,7 +54,13 @@
    #:db{:ident :film/url
         :valueType :db.type/string
         :cardinality :db.cardinality/one
-        :doc "The URL where one can find out about the film"}])
+        :doc "The URL where one can find out about the film"}
+
+   #:db{:ident :film/directed-by
+        :valueType :db.type/ref
+        :cardinality :db.cardinality/one
+        :references :person/id
+        :doc "The person who directed the film"}])
 
 (defn setup-connection [dbtype db-uri]
   (let [spec {:connection-uri db-uri}
@@ -90,7 +96,9 @@
   (transact *test-conn* {:tx-data [{:film/title "Luca"
                                     :film/genre "Animation"
                                     :film/release-year 2021
-                                    :film/url "https://www.themoviedb.org/movie/508943-luca?language=en-US"}]})
+                                    :film/url "https://www.themoviedb.org/movie/508943-luca?language=en-US"
+                                    :film/directed-by 2     ;; this would be Bob
+                                    }]})
 
   ;; fixme manually insert the relationship for now to test the join queries
   (jdbc/insert! *test-conn* :join_person_likes_films {:person_id 1
@@ -122,7 +130,7 @@
     (is (= #{[1 "Alice"] [2 "Bob"]} result)
       (format "dbtype=%s" (:dbtype *test-conn*)))))
 
-(deftest a-simple-join-query
+(deftest a-cardinality-many-join-query
   (let [result (q *test-conn* '[:find ?id ?person-name ?film-name
                                 :where
                                 [?p :person/name ?person-name]
@@ -138,3 +146,14 @@
                                    [?p :person/name ?person-name]
                                    [?p :person/id ?person-id]]))
       (format "dbtype=%s - results aren't equal" (:dbtype *test-conn*)))))
+
+(deftest a-cardinality-one-join-query
+  (let [result (q *test-conn* '[:find ?person-id ?person-name ?film-id ?film-name
+                                :where
+                                [?p :person/name ?person-name]
+                                [?p :person/id ?person-id]
+                                [?f :film/title ?film-name]
+                                [?f :film/directed-by ?p]
+                                [?f :film/id ?film-id]])]
+    (is (= #{[2 "Bob" 1 "Luca"]} result)
+      (format "dbtype=%s" (:dbtype *test-conn*)))))

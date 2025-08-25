@@ -127,13 +127,17 @@
                                                            (let [attribute (-> clause :pattern (nth 1) :value)
                                                                  matching-schema-clause (->> reference-attributes-from-schema
                                                                                           (filter #(= attribute (-> % :db/ident)))
-                                                                                          first)]
+                                                                                          first)
+                                                                 cardinality (-> matching-schema-clause :db/cardinality)]
                                                              (-> clause
                                                                (assoc :attribute attribute)
                                                                (assoc :from-table (-> attribute namespace))
-                                                               (assoc :from-column "id" #_(-> attribute name))
+                                                               (assoc :from-column (if (= :db.cardinality/one cardinality)
+                                                                                     (-> attribute name)
+                                                                                     "id"))
                                                                (assoc :to-table (-> matching-schema-clause :db/references (namespace)))
-                                                               (assoc :to-column (-> matching-schema-clause :db/references (name))))))))
+                                                               (assoc :to-column (-> matching-schema-clause :db/references (name)))
+                                                               (assoc :cardinality cardinality))))))
                            ;_enriched-where-clauses (clojure.pprint/pprint enriched-where-clauses)
                            tables-involved-in-query (->> enriched-where-clauses
                                                       (map #(list (:from-table %) (:to-table %)))
@@ -167,20 +171,28 @@
                                                             second-table-to-join (-> table-pair
                                                                                    (set/difference #{first-table-to-join})
                                                                                    first)]
-                                                        (->> (list
-                                                               ;; In the first join operation we want to link against an already mentioned table -> `first-table-to-join`.
-                                                               (format "JOIN %s ON %s.%s = %s.%s"
-                                                                 (utils/join-table-name (:attribute clause-to-add))
-                                                                 (utils/join-table-name (:attribute clause-to-add))
-                                                                 (format "%s_id" (utils/replace-dashes-with-underlines first-table-to-join))
-                                                                 (utils/replace-dashes-with-underlines first-table-to-join)
-                                                                 (utils/replace-dashes-with-underlines (:from-column clause-to-add)))
-                                                               (format "JOIN %s ON %s.%s = %s.%s"
-                                                                 second-table-to-join
-                                                                 (utils/join-table-name (:attribute clause-to-add))
-                                                                 (format "%s_id" (utils/replace-dashes-with-underlines second-table-to-join))
-                                                                 (utils/replace-dashes-with-underlines second-table-to-join)
-                                                                 "id"))
+                                                        (->> (if (= :db.cardinality/many (:cardinality clause-to-add))
+                                                               (list
+                                                                 ;; In the first join operation we want to link against an already mentioned table -> `first-table-to-join`.
+                                                                 (format "JOIN %s ON %s.%s = %s.%s"
+                                                                   (utils/join-table-name (:attribute clause-to-add))
+                                                                   (utils/join-table-name (:attribute clause-to-add))
+                                                                   (format "%s_id" (utils/replace-dashes-with-underlines first-table-to-join))
+                                                                   (utils/replace-dashes-with-underlines first-table-to-join)
+                                                                   (utils/replace-dashes-with-underlines (:from-column clause-to-add)))
+                                                                 (format "JOIN %s ON %s.%s = %s.%s"
+                                                                   second-table-to-join
+                                                                   (utils/join-table-name (:attribute clause-to-add))
+                                                                   (format "%s_id" (utils/replace-dashes-with-underlines second-table-to-join))
+                                                                   (utils/replace-dashes-with-underlines second-table-to-join)
+                                                                   "id"))
+                                                               (list
+                                                                 (format "JOIN %s ON %s.%s = %s.%s"
+                                                                   (utils/replace-dashes-with-underlines second-table-to-join)
+                                                                   (utils/replace-dashes-with-underlines (:from-table clause-to-add))
+                                                                   (utils/replace-dashes-with-underlines (:from-column clause-to-add))
+                                                                   (utils/replace-dashes-with-underlines (:to-table clause-to-add))
+                                                                   (utils/replace-dashes-with-underlines (:to-column clause-to-add)))))
                                                           (remove nil?))))
 
                                                     (set/union existing-tables #{(-> clause-to-add :from-table) (-> clause-to-add :to-table)})
@@ -221,27 +233,38 @@
   ([query] (datalog->sql [] query)))
 
 
-;; my testing query
-(datalog->sql [#:db{:ident :person/likes-films
-                    :valueType :db.type/ref
-                    :cardinality :db.cardinality/many
-                    :references :film/id                    ;; an addition that isn't needed by Datomic but helps us
-                    :doc "The films the person likes"}
-               #:db{:ident :person/lives-at
-                    :valueType :db.type/ref
-                    :cardinality :db.cardinality/many
-                    :references :location/id
-                    :doc "The locations the person lives at"}
-               #:db{:ident :location/country
+(datalog->sql [#:db{:ident :film/directed-by
                     :valueType :db.type/ref
                     :cardinality :db.cardinality/one
-                    :references :country/id
-                    :doc "The country a particular location is in"}]
-  '[:find ?person-name ?country-name ?title ?year ?genre
+                    :references :person/id                 ;; an addition that isn't needed by Datomic but helps us
+                    :doc "The person who directed this film"}]
+  '[:find ?person-name ?film-title
     :where
-    [?e :film/title ?title]
-    [?e :film/release-year ?year]
-    [?e :film/genre ?genre]
+    [?f :film/title ?film-title]
+    [?f :film/directed-by ?p]
+    [?p :person/name ?person-name]])
+
+(comment
+  (datalog->sql [#:db{:ident :person/likes-films
+                      :valueType :db.type/ref
+                      :cardinality :db.cardinality/many
+                      :references :film/id                  ;; an addition that isn't needed by Datomic but helps us
+                      :doc "The films the person likes"}
+                 #:db{:ident :person/lives-at
+                      :valueType :db.type/ref
+                      :cardinality :db.cardinality/many
+                      :references :location/id
+                      :doc "The locations the person lives at"}
+                 #:db{:ident :location/country
+                      :valueType :db.type/ref
+                      :cardinality :db.cardinality/one
+                      :references :country/id
+                      :doc "The country a particular location is in"}]
+    '[:find ?person-name ?country-name ?title ?year ?genre
+      :where
+      [?e :film/title ?title]
+      [?e :film/release-year ?year]
+      [?e :film/genre ?genre]
 
     [?p :person/name ?person-name]
     [?p :person/likes-films ?e]
