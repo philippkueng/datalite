@@ -103,8 +103,9 @@
   (let [schema (-> (jdbc/query connection (format "select * from %s limit 1" schema-table-name))
                  first
                  :schema
-                 (decode :msgpack))]
-    (->> (datalog->sql schema datalog-query)
+                 (decode :msgpack))
+        sql-query (datalog->sql schema datalog-query)]
+    (->> sql-query
          (jdbc/query connection)
          jdbc-response->datomic-response)))
 
