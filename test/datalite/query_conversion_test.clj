@@ -100,7 +100,7 @@
                        WHERE film.release_year = 1985")]
     (is (= sql-query (datalog->sql datalog-query)))))
 
-(deftest simple-filter-query-against-multiple-joined-entities
+(deftest filter-query-against-multiple-joined-entities
     (let [schema [#:db{:ident :person/likes-films
                        :valueType :db.type/ref
                        :cardinality :db.cardinality/many
