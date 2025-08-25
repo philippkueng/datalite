@@ -45,9 +45,15 @@
                 #:db{:ident :film/url
                      :valueType :db.type/string
                      :cardinality :db.cardinality/one
-                     :doc "The URL where one can find out about the film"}]
+                     :doc "The URL where one can find out about the film"}
+
+                #:db{:ident :film/directed-by
+                     :valueType :db.type/ref
+                     :cardinality :db.cardinality/one
+                     :references :person/id
+                     :doc "The person who directed the film"}]
         expected-queries #{"CREATE TABLE person (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, age INTEGER)"
-                           "CREATE TABLE film (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT, genre TEXT, release_year INTEGER, url TEXT)"
+                           "CREATE TABLE film (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT, genre TEXT, release_year INTEGER, url TEXT, directed_by INTEGER)"
                            "CREATE TABLE join_person_likes_films (film_id INTEGER, person_id INTEGER)"}
         generated-queries (set (create-table-commands :dbtype/sqlite schema))]
     (is (= generated-queries expected-queries))))
