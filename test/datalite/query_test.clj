@@ -2,8 +2,7 @@
   (:require [clojure.test :refer :all]
             [datalite.core :refer [q transact]]
             [datalite.protocols.duckdb]
-            [clojure.java.jdbc :as jdbc]
-            [babashka.fs :refer [delete-if-exists]]))
+            [clojure.java.jdbc :as jdbc]))
 
 (def ^:dynamic *test-conn* nil)
 
