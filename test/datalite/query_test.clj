@@ -1,21 +1,11 @@
 (ns datalite.query-test
   (:require [clojure.test :refer :all]
             [datalite.core :refer [q transact]]
+            [datalite.protocols.duckdb]
             [clojure.java.jdbc :as jdbc]
             [babashka.fs :refer [delete-if-exists]]))
 
 (def ^:dynamic *test-conn* nil)
-
-;; Needed as DuckDB doesn't return a ByteArray for the BLOB datatype so we'll need to convert it manually.
-(extend-protocol jdbc/IResultSetReadColumn
-  org.duckdb.DuckDBResultSet$DuckDBBlobResult
-  (result-set-read-column [val _ _]
-    (let [buffer-field (.getDeclaredField (class val) "buffer")]
-      (.setAccessible buffer-field true)
-      (let [byte-buffer (.get buffer-field val)
-            bytes (byte-array (.remaining byte-buffer))]
-        (.get byte-buffer bytes)
-        bytes))))
 
 (def schema
   [#:db{:ident :person/name
