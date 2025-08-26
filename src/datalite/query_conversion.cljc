@@ -266,14 +266,14 @@
       [?e :film/release-year ?year]
       [?e :film/genre ?genre]
 
-    [?p :person/name ?person-name]
-    [?p :person/likes-films ?e]
+      [?p :person/name ?person-name]
+      [?p :person/likes-films ?e]
 
-    [?p :person/lives-at ?l]
-    [?l :location/country ?c]
-    [?c :country/name ?country-name]
+      [?p :person/lives-at ?l]
+      [?l :location/country ?c]
+      [?c :country/name ?country-name]
 
-    [?e :film/release-year 1985]])
+      [?e :film/release-year 1985]]))
 
 ;;
 ;; FROM country
