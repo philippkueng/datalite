@@ -1,16 +1,15 @@
 (ns datalite.core
   (:require
-    [clojure.set :as set]
-    [datalite.config :refer [schema-table-name transactions-table-name]]
-    [datalite.utils :as utils]
-    [datalite.utils :refer [replace-dashes-with-underlines]]
-    [datalite.schema :refer [create-table-commands
-                             drop-table-commands
-                             create-full-text-search-table-commands] :as schema]
-    [datalite.query-conversion :refer [datalog->sql]]
-    [datalite.serialisation :refer [encode decode]]
-    [mount.core :as mount]
-    [clojure.java.jdbc :as jdbc]))
+   [clojure.set :as set]
+   [datalite.config :refer [schema-table-name transactions-table-name]]
+   [datalite.utils :refer [replace-dashes-with-underlines] :as utils]
+   [datalite.schema :refer [create-table-commands
+                            drop-table-commands
+                            create-full-text-search-table-commands] :as schema]
+   [datalite.query-conversion :refer [datalog->sql]]
+   [datalite.serialisation :refer [encode decode]]
+   [mount.core :as mount]
+   [clojure.java.jdbc :as jdbc]))
 
 (defn ensure-required-tables!
   "Checks if the required tables exist and if not creates them."
@@ -45,9 +44,9 @@
 (defn get-schema
   [connection]
   (-> (jdbc/query connection (format "select * from %s limit 1" schema-table-name))
-    first
-    :schema
-    (decode :msgpack)))
+      first
+      :schema
+      (decode :msgpack)))
 
 (defn transact
   "Turn lists of maps into insert calls"
@@ -76,18 +75,18 @@
           (jdbc/insert! connection
 
             ;; table-name
-            (keyword table-name)
+                        (keyword table-name)
 
             ;; remove-namespaces-from-map
-            (reduce (fn [non-namespaced-entry namespaced-key]
-                      (conj non-namespaced-entry
-                        {(-> namespaced-key name replace-dashes-with-underlines keyword) (namespaced-key entry)}))
-              {}
-              (keys entry))))
+                        (reduce (fn [non-namespaced-entry namespaced-key]
+                                  (conj non-namespaced-entry
+                                        {(-> namespaced-key name replace-dashes-with-underlines keyword) (namespaced-key entry)}))
+                                {}
+                                (keys entry))))
 
         ;; A vector which asserts to a single attribute. Can be multiple asserts in case of a one-to-many relationship
         (and (vector? entry)
-          (contains? #{:db/add :db/retract} (first entry)))
+             (contains? #{:db/add :db/retract} (first entry)))
         (let [schema (get-schema connection)]
           ;; ensure the shape matches my expectations
           ;; todo do more checks with a schema checker (eg. Clojure Spec or Malli)
@@ -97,57 +96,49 @@
           (let [attribute (nth entry 2)]
             ;; todo check for :db/add and :db/retract
             (if-let [attribute-schema-entry (->> schema
-                                              (filter #(= attribute (:db/ident %)))
-                                              first)]
+                                                 (filter #(= attribute (:db/ident %)))
+                                                 first)]
               (if (and (= :db.type/ref (:db/valueType attribute-schema-entry))
-                    (= :db.cardinality/many (:db/cardinality attribute-schema-entry)))
+                       (= :db.cardinality/many (:db/cardinality attribute-schema-entry)))
                 ;; if it's a reference type - we'll have to check its' cardinality
                 ;;  - if it's a one -> we can just set it
                 ;;  - if it's a many -> we can set it differently
                 (condp = (first entry)
                   :db/add
                   (jdbc/insert! connection
-                    (utils/join-table-name (:db/ident attribute-schema-entry))
-                    {(keyword (format "%s_id" (-> attribute-schema-entry :db/ident (namespace)))) (nth entry 1)
-                     (keyword (format "%s_id" (-> attribute-schema-entry :db/references (namespace)))) (nth entry 3)})
+                                (utils/join-table-name (:db/ident attribute-schema-entry))
+                                {(keyword (format "%s_id" (-> attribute-schema-entry :db/ident (namespace)))) (nth entry 1)
+                                 (keyword (format "%s_id" (-> attribute-schema-entry :db/references (namespace)))) (nth entry 3)})
 
                   :db/retract
                   (jdbc/delete! connection
-                    (utils/join-table-name (:db/ident attribute-schema-entry))
-                    [(format "%s = ? and %s = ?"
-                       (format "%s_id" (-> attribute-schema-entry :db/ident (namespace)))
-                       (format "%s_id" (-> attribute-schema-entry :db/references (namespace))))
-                     (nth entry 1)
-                     (nth entry 3)])
+                                (utils/join-table-name (:db/ident attribute-schema-entry))
+                                [(format "%s = ? and %s = ?"
+                                         (format "%s_id" (-> attribute-schema-entry :db/ident (namespace)))
+                                         (format "%s_id" (-> attribute-schema-entry :db/references (namespace))))
+                                 (nth entry 1)
+                                 (nth entry 3)])
 
-                  :else (throw "Invalid transact operation."))
+                  :else (throw (ex-info "Invalid transact operation." entry)))
 
                 ;; if it's a normal type -> we can run some additional checks or just attempt to set it
                 ;;  and let the database library handle any errors.
                 (condp = (first entry)
                   :db/add
                   (jdbc/update! connection
-                    (-> attribute-schema-entry :db/ident (namespace) keyword)
-                    {(-> attribute name keyword) (nth entry 3)}
-                    ["id = ?" (nth entry 1)])
+                                (-> attribute-schema-entry :db/ident (namespace) keyword)
+                                {(-> attribute name keyword) (nth entry 3)}
+                                ["id = ?" (nth entry 1)])
 
                   :db/retract
                   (jdbc/update! connection
-                    (-> attribute-schema-entry :db/ident (namespace) keyword)
-                    {(-> attribute name keyword) nil}
-                    ["id = ?" (nth entry 1)])))
+                                (-> attribute-schema-entry :db/ident (namespace) keyword)
+                                {(-> attribute name keyword) nil}
+                                ["id = ?" (nth entry 1)])))
 
-              (throw "The attribute isn't defined in any prior schema.")))))
+              (throw (ex-info "The attribute isn't defined in any prior schema." entry)))))
 
-        ;; todo how to throw errors properly?
-        :else (throw "Not implement transact payload")))))
-
-(comment
-
-  (get-schema films-and-cast/conn)
-
-  )
-
+        :else (throw (ex-info "Not implement transact payload" entry))))))
 (defn- map-record->vec-record [record]
   (->> record
        (into [])
