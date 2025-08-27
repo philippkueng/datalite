@@ -2,10 +2,11 @@
   (:require
     [clojure.set :as set]
     [datalite.config :refer [schema-table-name transactions-table-name]]
+    [datalite.utils :as utils]
     [datalite.utils :refer [replace-dashes-with-underlines]]
     [datalite.schema :refer [create-table-commands
-                            drop-table-commands
-                            create-full-text-search-table-commands] :as schema]
+                             drop-table-commands
+                             create-full-text-search-table-commands] :as schema]
     [datalite.query-conversion :refer [datalog->sql]]
     [datalite.serialisation :refer [encode decode]]
     [mount.core :as mount]
@@ -41,6 +42,12 @@
     (doseq [command (create-full-text-search-table-commands schema)]
       (jdbc/execute! connection command))))
 
+(defn get-schema
+  [connection]
+  (-> (jdbc/query connection (format "select * from %s limit 1" schema-table-name))
+    first
+    :schema
+    (decode :msgpack)))
 
 (defn transact
   "Turn lists of maps into insert calls"
@@ -61,19 +68,85 @@
       (create-tables! connection tx-data))
 
     (doseq [entry tx-data]
-      ;; TODO: 11.06.2022 assuming that the map correlates to a single table insert.
-      (let [table-name (->> entry keys first namespace)]
-        (jdbc/insert! connection
+      ;; An entry can either be a map of asserts or a vector of a single assert.
+      (cond
+        ;; A map where each key represents an individual assert.
+        (map? entry)
+        (let [table-name (->> entry keys first namespace)]
+          (jdbc/insert! connection
 
-          ;; table-name
-          (keyword table-name)
+            ;; table-name
+            (keyword table-name)
 
-          ;; remove-namespaces-from-map
-          (reduce (fn [non-namespaced-entry namespaced-key]
-                    (conj non-namespaced-entry
-                      {(-> namespaced-key name replace-dashes-with-underlines keyword) (namespaced-key entry)}))
-            {}
-            (keys entry)))))))
+            ;; remove-namespaces-from-map
+            (reduce (fn [non-namespaced-entry namespaced-key]
+                      (conj non-namespaced-entry
+                        {(-> namespaced-key name replace-dashes-with-underlines keyword) (namespaced-key entry)}))
+              {}
+              (keys entry))))
+
+        ;; A vector which asserts to a single attribute. Can be multiple asserts in case of a one-to-many relationship
+        (and (vector? entry)
+          (contains? #{:db/add :db/retract} (first entry)))
+        (let [schema (get-schema connection)]
+          ;; ensure the shape matches my expectations
+          ;; todo do more checks with a schema checker (eg. Clojure Spec or Malli)
+          (assert (= 4 (count entry)) "There are not enough attributes in the addition or retraction")
+
+          ;; check if the attribute mentioned is part of the schema and to which table it belongs
+          (let [attribute (nth entry 2)]
+            ;; todo check for :db/add and :db/retract
+            (if-let [attribute-schema-entry (->> schema
+                                              (filter #(= attribute (:db/ident %)))
+                                              first)]
+              (if (and (= :db.type/ref (:db/valueType attribute-schema-entry))
+                    (= :db.cardinality/many (:db/cardinality attribute-schema-entry)))
+                ;; if it's a reference type - we'll have to check its' cardinality
+                ;;  - if it's a one -> we can just set it
+                ;;  - if it's a many -> we can set it differently
+                (condp = (first entry)
+                  :db/add
+                  (jdbc/insert! connection
+                    (utils/join-table-name (:db/ident attribute-schema-entry))
+                    {(keyword (format "%s_id" (-> attribute-schema-entry :db/ident (namespace)))) (nth entry 1)
+                     (keyword (format "%s_id" (-> attribute-schema-entry :db/references (namespace)))) (nth entry 3)})
+
+                  :db/retract
+                  (jdbc/delete! connection
+                    (utils/join-table-name (:db/ident attribute-schema-entry))
+                    [(format "%s = ? and %s = ?"
+                       (format "%s_id" (-> attribute-schema-entry :db/ident (namespace)))
+                       (format "%s_id" (-> attribute-schema-entry :db/references (namespace))))
+                     (nth entry 1)
+                     (nth entry 3)])
+
+                  :else (throw "Invalid transact operation."))
+
+                ;; if it's a normal type -> we can run some additional checks or just attempt to set it
+                ;;  and let the database library handle any errors.
+                (condp = (first entry)
+                  :db/add
+                  (jdbc/update! connection
+                    (-> attribute-schema-entry :db/ident (namespace) keyword)
+                    {(-> attribute name keyword) (nth entry 3)}
+                    ["id = ?" (nth entry 1)])
+
+                  :db/retract
+                  (jdbc/update! connection
+                    (-> attribute-schema-entry :db/ident (namespace) keyword)
+                    {(-> attribute name keyword) nil}
+                    ["id = ?" (nth entry 1)])))
+
+              (throw "The attribute isn't defined in any prior schema.")))))
+
+        ;; todo how to throw errors properly?
+        :else (throw "Not implement transact payload")))))
+
+(comment
+
+  (get-schema films-and-cast/conn)
+
+  )
 
 (defn- map-record->vec-record [record]
   (->> record
@@ -100,11 +173,10 @@
 
 (defn q
   [connection datalog-query]
-  (let [schema (-> (jdbc/query connection (format "select * from %s limit 1" schema-table-name))
-                 first
-                 :schema
-                 (decode :msgpack))
-        sql-query (datalog->sql schema datalog-query)]
+  (let [schema (get-schema connection)
+        sql-query (datalog->sql schema datalog-query)
+        ;_print-sql-query (println sql-query)
+        ]
     (->> sql-query
          (jdbc/query connection)
          jdbc-response->datomic-response)))
