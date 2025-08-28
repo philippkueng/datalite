@@ -131,8 +131,8 @@
                                                 [?p :person/name ?person-name]
                                                 [?p :person/likes-films ?f]
                                                 [?f :film/title ?film-name]])))
-    (transact *test-conn* {:tx-data [[:db/add 1 :person/likes-films 2]]})
-    #_(transact *test-conn* {:tx-data [[:db/add [:person/name "Alice"] :person/likes-films [:film/title "Elio"]]]})
+    #_(transact *test-conn* {:tx-data [[:db/add 1 :person/likes-films 2]]})
+    (transact *test-conn* {:tx-data [[:db/add [:person/name "Alice"] :person/likes-films [:film/title "Elio"]]]})
     (is (= #{["Alice" "Luca"] ["Alice" "Elio"]} (q *test-conn* '[:find ?person-name ?film-name
                                                                  :where
                                                                  [?p :person/name ?person-name]

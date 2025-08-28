@@ -48,6 +48,17 @@
       :schema
       (decode :msgpack)))
 
+(defn- resolve-lookup-ref [connection lookup-ref]
+  (if (vector? lookup-ref)
+    (-> (jdbc/query connection [(format "select id from %s where %s = ? limit 1"
+                                  (-> lookup-ref first namespace)
+                                  (-> lookup-ref first name))
+                                (-> lookup-ref second)])
+      first
+      :id)
+
+    lookup-ref))
+
 (defn transact
   "Turn lists of maps into insert calls"
   [connection {:keys [tx-data] :as data}]
@@ -107,17 +118,19 @@
                   :db/add
                   (jdbc/insert! connection
                                 (utils/join-table-name (:db/ident attribute-schema-entry))
-                                {(keyword (format "%s_id" (-> attribute-schema-entry :db/ident (namespace)))) (nth entry 1)
-                                 (keyword (format "%s_id" (-> attribute-schema-entry :db/references (namespace)))) (nth entry 3)})
+                                {(keyword (format "%s_id" (-> attribute-schema-entry :db/ident (namespace))))
+                                 (resolve-lookup-ref connection (nth entry 1))
+                                 (keyword (format "%s_id" (-> attribute-schema-entry :db/references (namespace))))
+                                 (resolve-lookup-ref connection (nth entry 3))})
 
                   :db/retract
                   (jdbc/delete! connection
-                                (utils/join-table-name (:db/ident attribute-schema-entry))
-                                [(format "%s = ? and %s = ?"
-                                         (format "%s_id" (-> attribute-schema-entry :db/ident (namespace)))
+                    (utils/join-table-name (:db/ident attribute-schema-entry))
+                    [(format "%s = ? and %s = ?"
+                       (format "%s_id" (-> attribute-schema-entry :db/ident (namespace)))
                                          (format "%s_id" (-> attribute-schema-entry :db/references (namespace))))
-                                 (nth entry 1)
-                                 (nth entry 3)])
+                     (resolve-lookup-ref connection (nth entry 1))
+                     (resolve-lookup-ref connection (nth entry 3))])
 
                   :else (throw (ex-info "Invalid transact operation." entry)))
 
@@ -127,8 +140,8 @@
                   :db/add
                   (jdbc/update! connection
                                 (-> attribute-schema-entry :db/ident (namespace) keyword)
-                                {(-> attribute name keyword) (nth entry 3)}
-                                ["id = ?" (nth entry 1)])
+                                {(-> attribute name keyword) (resolve-lookup-ref connection (nth entry 3))}
+                    ["id = ?" (resolve-lookup-ref connection (nth entry 1))])
 
                   :db/retract
                   (jdbc/update! connection
