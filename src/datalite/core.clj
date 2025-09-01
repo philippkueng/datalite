@@ -152,6 +152,7 @@
               (throw (ex-info "The attribute isn't defined in any prior schema." entry)))))
 
         :else (throw (ex-info "Not implement transact payload" entry))))))
+
 (defn- map-record->vec-record [record]
   (->> record
        (into [])
