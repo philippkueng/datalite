@@ -64,6 +64,18 @@
   [connection tx-data]
   (jdbc/insert! connection (keyword transactions-table-name) {:data (encode tx-data :msgpack)}))
 
+(defn apply-schema
+  [connection tx-data]
+  ;; Persist the schema.
+  (jdbc/insert! connection (keyword schema-table-name) {:schema (encode tx-data :msgpack)})
+
+  ;; Apply the schema.
+  (println "Applying schema...")
+  (create-tables! connection tx-data))
+
+;(defn is-tx-data-a-schema? [tx-data]
+;  (every? #(some? (:db/ident %)) tx-data))
+
 (defn transact
   "Turn lists of maps into insert calls"
   [connection {:keys [tx-data] :as data}]
@@ -74,12 +86,7 @@
 
   ;; Check if the tx-data is a schema (my assumption is that transact is either called with schema information or data but not mixed)
   (if (every? #(some? (:db/ident %)) tx-data)
-    (do
-      ;; Persist the schema.
-      (jdbc/insert! connection (keyword schema-table-name) {:schema (encode tx-data :msgpack)})
-
-      ;; Apply the schema.
-      (create-tables! connection tx-data))
+    (apply-schema connection tx-data)
 
     (doseq [entry tx-data]
       ;; An entry can either be a map of asserts or a vector of a single assert.

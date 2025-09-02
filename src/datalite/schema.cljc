@@ -37,6 +37,10 @@
                                                 :dbtype/sqlite "TEXT"
                                                 :dbtype/duckdb "VARCHAR"
                                                 :dbtype/postgresql "VARCHAR")
+                             :db.type/uuid (condp = dbtype
+                                             :dbtype/sqlite "TEXT"
+                                             :dbtype/duckdb "UUID"
+                                             :dbtype/postgresql "UUID")
                              :db.type/long "INTEGER"
                              :db.type/boolean "INTEGER"
                              :db.type/ref "INTEGER")}))))
