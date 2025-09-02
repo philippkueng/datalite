@@ -59,7 +59,7 @@
 
     lookup-ref))
 
-(defn- persist-transaction-data
+(defn persist-transaction-data
   "Persist the transactions' tx-data into the transactions table"
   [connection tx-data]
   (jdbc/insert! connection (keyword transactions-table-name) {:data (encode tx-data :msgpack)}))
@@ -89,10 +89,10 @@
         (let [table-name (->> entry keys first namespace)]
           (jdbc/insert! connection
 
-            ;; table-name
+                        ;; table-name
                         (keyword table-name)
 
-            ;; remove-namespaces-from-map
+                        ;; remove-namespaces-from-map
                         (reduce (fn [non-namespaced-entry namespaced-key]
                                   (conj non-namespaced-entry
                                         {(-> namespaced-key name replace-dashes-with-underlines keyword) (namespaced-key entry)}))
