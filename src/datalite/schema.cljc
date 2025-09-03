@@ -55,7 +55,9 @@
     (let [tables (ordered-table-names [(namespace (:db/ident attr))
                                        (-> (:db/references attr) namespace)])]
       {:name (utils/join-table-name (:db/ident attr))
-       :columns (map #(str % "_id") tables)})))
+       :columns (->> tables
+                  (map (fn [involved-table] {:field-name (str involved-table "_id")
+                                             :field-type "INTEGER"})))})))
 
 (defn create-internal-table-commands
   "Generates the SQL commands for the required database to track schemas"
@@ -97,14 +99,28 @@
                               :dbtype/duckdb (for [table (schema->tables schema)]
                                                (format "CREATE SEQUENCE %s_id_seq" table))
                               '())
+        timestamp-columns (list
+                            {:field-name "valid_from"
+                             :field-type (condp = dbtype
+                                           :dbtype/sqlite "TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))"
+                                           :dbtype/duckdb "TIMESTAMPTZ NOT NULL DEFAULT current_timestamp"
+                                           :dbtype/postgresql "TIMESTAMPTZ NOT NULL DEFAULT current_timestamp")}
+                            ;; if the valid_to is open ended 'infinity' - we'll keep the value nil.
+                            {:field-name "valid_to"
+                             :field-type (condp = dbtype
+                                           :dbtype/sqlite "TEXT"
+                                           :dbtype/duckdb "TIMESTAMPTZ"
+                                           :dbtype/postgresql "TIMESTAMPTZ")})
         main-tables
         (for [table (schema->tables schema)]
-          (let [field-and-types-part (->> (cons
-                                           {:field-name "id"
-                                            :field-type (condp = dbtype
-                                                          :dbtype/sqlite "INTEGER PRIMARY KEY AUTOINCREMENT"
-                                                          :dbtype/duckdb (format "INTEGER PRIMARY KEY DEFAULT nextval('%s_id_seq')" table)
-                                                          :dbtype/postgresql "INTEGER PRIMARY KEY GENERATED ALWAYS AS IDENTITY")}
+          (let [field-and-types-part (->> (concat
+                                            (list
+                                              {:field-name "id"
+                                               :field-type (condp = dbtype
+                                                             :dbtype/sqlite "INTEGER PRIMARY KEY AUTOINCREMENT"
+                                                             :dbtype/duckdb (format "INTEGER PRIMARY KEY DEFAULT nextval('%s_id_seq')" table)
+                                                             :dbtype/postgresql "INTEGER PRIMARY KEY GENERATED ALWAYS AS IDENTITY")})
+                                            timestamp-columns
                                             (schema->fields-and-types dbtype schema table))
                                        (map (fn [{:keys [field-name field-type]}]
                                               (str field-name " " field-type)))
@@ -113,7 +129,8 @@
         join-tables
         (for [{:keys [name columns]} (join-table-attributes schema)]
           (str "CREATE TABLE " name
-               " (" (str/join ", " (map #(str % " INTEGER") columns)) ")"))]
+               " (" (str/join ", " (map #(str/join " " (list (:field-name %) (:field-type %)))
+                                     (concat columns timestamp-columns))) ")"))]
     (concat sequence-statements main-tables join-tables)))
 
 (defn- schema->full-text-search-fields
