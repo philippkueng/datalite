@@ -1,8 +1,9 @@
 (ns datalite.protocols.duckdb
-  (:require [clojure.java.jdbc :as jdbc]))
+  (:require #_[clojure.java.jdbc :as jdbc]
+    [next.jdbc :as jdbc]))
 
 ;; Needed as DuckDB doesn't return a ByteArray for the BLOB datatype so we'll need to convert it manually.
-(extend-protocol jdbc/IResultSetReadColumn
+#_(extend-protocol jdbc/IResultSetReadColumn
   org.duckdb.DuckDBResultSet$DuckDBBlobResult
   (result-set-read-column [val _ _]
     (let [buffer-field (.getDeclaredField (class val) "buffer")]

@@ -9,7 +9,9 @@
    [datalite.query-conversion :refer [datalog->sql]]
    [datalite.serialisation :refer [encode decode]]
    [mount.core :as mount]
-   [clojure.java.jdbc :as jdbc]))
+   #_[clojure.java.jdbc :as jdbc]
+   [next.jdbc :as jdbc]
+   [next.jdbc.sql :as jdbc-sql]))
 
 (defn ensure-required-tables!
   "Checks if the required tables exist and if not creates them."
@@ -22,35 +24,40 @@
           (throw (ex-info "Unsupported dbtype" {:dbtype dbtype})))
         ;; The key for table name may differ by DB, so adjust as needed:
         table-key (case dbtype
-                    :dbtype/sqlite :name
-                    :dbtype/postgresql :table_name
-                    :dbtype/duckdb :table_name)
-        existing-tables (set (map table-key (jdbc/query connection table-check-sql)))
+                    :dbtype/sqlite :tables/name
+                    :dbtype/postgresql :tables/table_name
+                    :dbtype/duckdb :tables/table_name)
+        existing-tables (set (map table-key (jdbc-sql/query connection table-check-sql)))
+        _print-exsting-tables (println (pr-str (jdbc-sql/query connection table-check-sql)))
+        _print-exsting-tables (println (pr-str existing-tables))
         required-tables #{schema-table-name transactions-table-name}
-        missing-tables (clojure.set/difference required-tables existing-tables)]
+        missing-tables (clojure.set/difference required-tables existing-tables)
+        _print-missing-tables (println (pr-str missing-tables))]
     (when (seq missing-tables)
       (doseq [cmd (schema/create-internal-table-commands dbtype)]
-        (jdbc/execute! connection cmd)))))
+        (println cmd)
+        (jdbc/with-transaction [tx connection]
+          (jdbc/execute! tx [cmd]))
+        (println "ran" cmd)))))
 
 (defn create-tables!
   "Convenience functions to create all the tables required for supporting the schema"
   [connection schema]
   (doseq [command (create-table-commands (:dbtype connection) schema)]
-    (jdbc/execute! connection command))
+    (jdbc/execute-one! connection [command]))
   (when (= :dbtype/sqlite (:dbtype connection))
-    (doseq [command (create-full-text-search-table-commands schema)]
-      (jdbc/execute! connection command))))
+    (jdbc/execute-one! connection [(create-full-text-search-table-commands schema)])))
 
 (defn get-schema
   [connection]
-  (-> (jdbc/query connection (format "select * from %s limit 1" schema-table-name))
-      first
-      :schema
-      (decode :msgpack)))
+  (-> (jdbc-sql/query connection [(format "select * from %s limit 1" schema-table-name)])
+    first
+    (get (keyword schema-table-name "schema"))
+    (decode :msgpack)))
 
 (defn- resolve-lookup-ref [connection lookup-ref]
   (if (vector? lookup-ref)
-    (-> (jdbc/query connection [(format "select id from %s where %s = ? limit 1"
+    (-> (jdbc-sql/query connection [(format "select id from %s where %s = ? limit 1"
                                   (-> lookup-ref first namespace)
                                   (-> lookup-ref first name))
                                 (-> lookup-ref second)])
@@ -62,12 +69,12 @@
 (defn persist-transaction-data
   "Persist the transactions' tx-data into the transactions table"
   [connection tx-data]
-  (jdbc/insert! connection (keyword transactions-table-name) {:data (encode tx-data :msgpack)}))
+  (jdbc-sql/insert! connection (keyword transactions-table-name) {:data (encode tx-data :msgpack)}))
 
 (defn apply-schema
   [connection tx-data]
   ;; Persist the schema.
-  (jdbc/insert! connection (keyword schema-table-name) {:schema (encode tx-data :msgpack)})
+  (jdbc-sql/insert! connection (keyword schema-table-name) {:schema (encode tx-data :msgpack)})
 
   ;; Apply the schema.
   (println "Applying schema...")
@@ -94,7 +101,7 @@
         ;; A map where each key represents an individual assert.
         (map? entry)
         (let [table-name (->> entry keys first namespace)]
-          (jdbc/insert! connection
+          (jdbc-sql/insert! connection
 
                         ;; table-name
                         (keyword table-name)
@@ -127,7 +134,7 @@
                 ;;  - if it's a many -> we can set it differently
                 (condp = (first entry)
                   :db/add
-                  (jdbc/insert! connection
+                  (jdbc-sql/insert! connection
                                 (utils/join-table-name (:db/ident attribute-schema-entry))
                                 {(keyword (format "%s_id" (-> attribute-schema-entry :db/ident (namespace))))
                                  (resolve-lookup-ref connection (nth entry 1))
@@ -135,7 +142,7 @@
                                  (resolve-lookup-ref connection (nth entry 3))})
 
                   :db/retract
-                  (jdbc/delete! connection
+                  (jdbc-sql/delete! connection
                     (utils/join-table-name (:db/ident attribute-schema-entry))
                     [(format "%s = ? and %s = ?"
                        (format "%s_id" (-> attribute-schema-entry :db/ident (namespace)))
@@ -149,13 +156,13 @@
                 ;;  and let the database library handle any errors.
                 (condp = (first entry)
                   :db/add
-                  (jdbc/update! connection
+                  (jdbc-sql/update! connection
                                 (-> attribute-schema-entry :db/ident (namespace) keyword)
                                 {(-> attribute name keyword) (resolve-lookup-ref connection (nth entry 3))}
                     ["id = ?" (resolve-lookup-ref connection (nth entry 1))])
 
                   :db/retract
-                  (jdbc/update! connection
+                  (jdbc-sql/update! connection
                                 (-> attribute-schema-entry :db/ident (namespace) keyword)
                                 {(-> attribute name keyword) nil}
                                 ["id = ?" (nth entry 1)])))
@@ -193,9 +200,9 @@
         sql-query (datalog->sql schema datalog-query)
         ;_print-sql-query (println sql-query)
         ]
-    (->> sql-query
-         (jdbc/query connection)
-         jdbc-response->datomic-response)))
+    (->> [sql-query]
+      (jdbc-sql/query connection)
+      jdbc-response->datomic-response)))
 
 (comment
   (q db '[:find ?id ?name

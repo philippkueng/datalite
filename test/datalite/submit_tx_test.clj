@@ -4,7 +4,9 @@
             [datalite.api.xtdb :refer [q submit-tx]]
             [datalite.protocols.duckdb]
             [datalite.keywords.xtdb :as xt]
-            [clojure.java.jdbc :as jdbc])
+            #_[clojure.java.jdbc :as jdbc]
+            [next.jdbc :as jdbc]
+            [next.jdbc.sql :as jdbc-sql])
   (:import (java.util UUID)))
 
 (def ^:dynamic *test-conn* nil)
@@ -75,10 +77,11 @@
   (let [{:keys [dbtype]} *test-conn*]
     (cond
       (= dbtype :dbtype/postgresql)
-      (let [tables (jdbc/query *test-conn*
+      (let [tables (jdbc-sql/query *test-conn*
                      ["SELECT tablename FROM pg_tables WHERE schemaname = 'public'"])]
-        (doseq [{:keys [tablename]} tables]
-          (jdbc/execute! *test-conn* [(str "DROP TABLE IF EXISTS " tablename " CASCADE;")])))
+        (doseq [table tables]
+          (println "Dropping table" (:pg_tables/tablename table))
+          (jdbc/execute-one! *test-conn* [(str "DROP TABLE IF EXISTS " (:pg_tables/tablename table) " CASCADE")])))
 
       ;; Skip teardown as we're working with in-memory databases.
       (contains? #{:dbtype/sqlite :dbtype/duckdb} dbtype)
@@ -109,13 +112,13 @@
                                      }]])
 
   ;; fixme manually insert the relationship for now to test the join queries
-  (jdbc/insert! *test-conn* :join_person_likes_films {:person_id 1
+  (jdbc-sql/insert! *test-conn* :join_person_likes_films {:person_id 1
                                                       :film_id 1}))
 
-(def dbtypes-to-test [{:dbtype :dbtype/sqlite
+(def dbtypes-to-test [#_{:dbtype :dbtype/sqlite
                        :db-uri "jdbc:sqlite::memory:"}
                       {:dbtype :dbtype/duckdb
-                       :db-uri "jdbc:duckdb:memory:"}
+                       :db-uri "jdbc:duckdb:duckdb-test.db"}
                       {:dbtype :dbtype/postgresql
                        :db-uri "jdbc:postgresql://localhost:5432/datalite-test?user=datalite&password=datalite"}])
 

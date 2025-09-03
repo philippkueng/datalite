@@ -2,9 +2,9 @@
   (:require [datalite.core :as core]
             [datalite.keywords.xtdb :as xt]
             [datalite.utils :refer [replace-dashes-with-underlines] :as utils]
-            [clojure.java.jdbc :as jdbc]
-            #_[next.jdbc :as jdbc]
-            #_[next.jdbc.sql :as jdbc-sql]))
+            #_[clojure.java.jdbc :as jdbc]
+            [next.jdbc :as jdbc]
+            [next.jdbc.sql :as jdbc-sql]))
 
 (comment
   ;(xt/submit-tx node [[::xt/put {:xt/id (java.util.UUID/randomUUID)
@@ -74,12 +74,12 @@
                                            (dissoc :xt/id)))
                          cardinality-many-ref-entries (select-keys renamed-xt-id refs-of-cardinality-many-keys)
                          upsertable-entries (apply dissoc renamed-xt-id refs-of-cardinality-many-keys)]
-                     (jdbc/with-db-transaction [t-conn connection]
+                     (jdbc/with-transaction [t-conn connection]
                        ;; todo check if there's already an entry with the same :xt/id in the database
                        ;;  if so, change the :valid-to to now and insert a new entry.
 
                        ;; Insert the entries which can just be upserted into an entities row
-                       (let [{:keys [id] :as resp} (jdbc/insert! t-conn
+                       (let [{:keys [id] :as resp} (jdbc-sql/insert! t-conn
 
                                             ;; table-name
                                             (keyword table-name)
@@ -113,7 +113,7 @@
                                       :film_id film-id})))
 
                              (doseq [value values]
-                               (jdbc/insert! t-conn
+                               (jdbc-sql/insert! t-conn
                                  (utils/join-table-name (:db/ident attribute-schema-entry))
                                  (let [payload
                                        {(keyword (format "%s_id" (-> attribute-schema-entry :db/ident (namespace))))
