@@ -79,18 +79,22 @@
                        ;;  if so, change the :valid-to to now and insert a new entry.
 
                        ;; Insert the entries which can just be upserted into an entities row
-                       (let [{:keys [id] :as resp} (jdbc/insert! t-conn
+                       (let [_insertion (jdbc/insert! t-conn
 
-                                            ;; table-name
-                                            (keyword table-name)
+                                          ;; table-name
+                                          (keyword table-name)
 
-                                            ;; remove-namespaces-from-map
-                                            (reduce (fn [non-namespaced-entry namespaced-key]
-                                                      (conj non-namespaced-entry
-                                                        {(-> namespaced-key name replace-dashes-with-underlines keyword) (namespaced-key upsertable-entries)}))
-                                              {}
-                                              (keys upsertable-entries)))
-                             _print-resp (println (pr-str resp))]
+                                          ;; remove-namespaces-from-map
+                                          (reduce (fn [non-namespaced-entry namespaced-key]
+                                                    (conj non-namespaced-entry
+                                                      {(-> namespaced-key name replace-dashes-with-underlines keyword) (namespaced-key upsertable-entries)}))
+                                            {}
+                                            (keys upsertable-entries)))
+
+                             ;; fetch the integer `id` of the entity just inserted.
+                             {:keys [id]} (jdbc/query t-conn
+                                                     [(format "select id from %s where xt_id = ? limit 1" table-name)
+                                                      (:xt/id entry)])]
 
                          (doseq [[attribute value] cardinality-many-ref-entries]
                            ;; get the schema entry for this attribute
@@ -104,13 +108,6 @@
                                  _print-values (println (pr-str values))]
                              ;; todo deal with relations which have previously been mentioned but are not part of the current
                              ;;  tx-data and hence need to be marked as no longer valid.
-                             #_(jdbc/with-db-transaction [t-conn conn]
-                                 (let [film-id (:id (first (jdbc/query t-conn "select id from film limit 1")))
-                                       {:keys [id name age]} (jdbc/insert! t-conn :person {:name "Max"
-                                                                                           :age 123})]
-                                   (jdbc/insert! t-conn :join_person_likes_films
-                                     {:person_id id
-                                      :film_id film-id})))
 
                              (doseq [value values]
                                (jdbc/insert! t-conn
@@ -124,7 +121,8 @@
                                         ;; todo think through the case when "value" is a set (I think it can only be a set)
                                         value
                                         #_(resolve-lookup-ref connection (nth entry 3))}
-                                       _print-payload (println (pr-str payload))]
+                                       ;_print-payload (println (pr-str payload))
+                                       ]
                                    payload)))
                              )
                            )))

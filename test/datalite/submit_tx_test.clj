@@ -158,7 +158,7 @@
     (is (= #{[1 "Alice" 29] [2 "Bob" 28] [3 "Clara" 25]} (result))
       (format "dbtype=%s single-assertion" (:dbtype *test-conn*)))
 
-    #_(is (= #{["Alice" "Luca"] ["Clara" "Luca"] ["Clara" "Elio"]}
+    (is (= #{["Alice" "Luca"] ["Clara" "Luca"] ["Clara" "Elio"]}
           (q *test-conn* '{:find [?person-name ?film-name]
                            :where [[?p :person/name ?person-name]
                                    [?p :person/likes-films ?f]
