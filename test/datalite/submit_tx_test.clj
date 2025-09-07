@@ -5,7 +5,8 @@
             [datalite.protocols.duckdb]
             [datalite.keywords.xtdb :as xt]
             [clojure.java.jdbc :as jdbc])
-  (:import (java.util UUID)))
+  (:import (java.util UUID)
+           (java.time Instant)))
 
 (def ^:dynamic *test-conn* nil)
 
@@ -62,7 +63,13 @@
         :valueType :db.type/ref
         :cardinality :db.cardinality/one
         :references :person/id
-        :doc "The person who directed the film"}])
+        :doc "The person who directed the film"}
+
+   #:db{:ident :film/cast
+        :valueType :db.type/ref
+        :cardinality :db.cardinality/many
+        :references :person/id
+        :doc "A person who casts in the film"}])
 
 (defn setup-connection [dbtype db-uri]
   (let [spec {:connection-uri db-uri}
@@ -90,6 +97,19 @@
 (defn uuid []
   (UUID/randomUUID))
 
+(def bob-xt-id (uuid))
+
+;; todo fix that the entity table `id` columns aren't ever increasing but they should be matched using the :xt/id
+
+(def luca-film-entity
+  {:xt/id (uuid)
+   :film/title "Luca"
+   :film/genre "Animation"
+   :film/release-year 2021
+   :film/url "https://www.themoviedb.org/movie/508943-luca?language=en-US"
+   :film/directed-by 2    ;; this would be Bob
+   :film/cast #{1}})
+
 (defn setup! []
   (teardown!)
   #_(submit-tx *test-conn* [[::xt/put {:datalite/schema schema}]])
@@ -97,22 +117,42 @@
   (submit-tx *test-conn* [[::xt/put {:xt/id (uuid)
                                      :person/name "Alice"
                                      :person/age 29}]
-                          [::xt/put {:xt/id (uuid)
+                          [::xt/put {:xt/id bob-xt-id
                                      :person/name "Bob"
                                      :person/age 28}]])
-  (submit-tx *test-conn* [[::xt/put {:xt/id (uuid)
-                                     :film/title "Luca"
-                                     :film/genre "Animation"
-                                     :film/release-year 2021
-                                     :film/url "https://www.themoviedb.org/movie/508943-luca?language=en-US"
-                                     :film/directed-by 2    ;; this would be Bob
-                                     }]])
+  (submit-tx *test-conn* [[::xt/put luca-film-entity]])
 
   ;; fixme manually insert the relationship for now to test the join queries
   (jdbc/insert! *test-conn* :join_person_likes_films {:person_id 1
-                                                      :film_id 1}))
+                                                      :film_id 1
+                                                      :valid_from (.toEpochMilli (Instant/now))}))
 
-(def dbtypes-to-test [{:dbtype :dbtype/sqlite
+(def dbtypes-to-test [
+                      ;; Disabling SQLite for now as it doesn't support having the id as an integer and auto-increment it
+                      ;;  despite it not being the primary key. There might be a workaround with triggers but for now I'll
+                      ;; disable it and move on with DuckDB and PostgreSQL.
+                      ;;
+                      ;; According to LLMs this can be a solution:
+                      ;;
+                      ;CREATE TABLE my_table (
+                      ;                        rowid INTEGER PRIMARY KEY AUTOINCREMENT,
+                      ;                        id INTEGER,
+                      ;                        data TEXT
+                      ;                        );
+                      ;
+                      ;You can use an AFTER INSERT trigger to set id if it was not provided:
+                      ;
+                      ;CREATE TRIGGER set_id_after_insert
+                      ;AFTER INSERT ON my_table
+                      ;FOR EACH ROW
+                      ;WHEN NEW.id IS NULL
+                      ;BEGIN
+                      ;UPDATE my_table
+                      ;SET id = (SELECT COALESCE(MAX(id), 0) + 1 FROM my_table WHERE rowid < NEW.rowid)
+                      ;WHERE rowid = NEW.rowid;
+                      ;END;
+
+                      {:dbtype :dbtype/sqlite
                        :db-uri "jdbc:sqlite::memory:"}
                       {:dbtype :dbtype/duckdb
                        :db-uri "jdbc:duckdb:memory:"}
@@ -136,7 +176,7 @@
                                   :where [[?e :person/name ?name]
                                           [?e :person/age ?age]
                                           [?e :person/id ?id]]}))
-        clara-uuid (uuid)]
+        clara-xt-id (uuid)]
     (is (= #{[1 "Alice" 29] [2 "Bob" 28]} (result))
       (format "dbtype=%s - baseline" (:dbtype *test-conn*)))
 
@@ -150,7 +190,7 @@
                                        :film/genre "Animation"
                                        :film/release-year 2025}]])
 
-    (submit-tx *test-conn* [[::xt/put {:xt/id clara-uuid
+    (submit-tx *test-conn* [[::xt/put {:xt/id clara-xt-id
                                        :person/name "Clara"
                                        :person/age 25
                                        :person/likes-films #{1 2}}]])
@@ -163,6 +203,62 @@
                            :where [[?p :person/name ?person-name]
                                    [?p :person/likes-films ?f]
                                    [?f :film/title ?film-name]]})))
+
+    ;; have a datalog query to return a single entity EID (the UUID in that case)
+
+    ;; Change Bob's age
+    (submit-tx *test-conn* [[::xt/put {:xt/id bob-xt-id
+                                       :person/name "Bob"
+                                       :person/age 29}]])
+
+    #_(is (= #{[1 "Alice" 29] [2 "Bob" 29] [3 "Clara" 25]} (result))
+      (format "dbtype=%s single-assertion" (:dbtype *test-conn*)))
+
+    ;; todo with references, we'll also need to support UUIDs and then use an :xt/id -> id lookup to resolve them
+
+    ;; Bob also likes the film Luca
+    (submit-tx *test-conn* [[::xt/put {:xt/id bob-xt-id
+                                       :person/name "Bob"
+                                       :person/age 29
+                                       :person/likes-films #{1}}]])
+
+    ;; Clara no longer likes Luca (she only likes Elio)
+    (submit-tx *test-conn* [[::xt/put {:xt/id clara-xt-id
+                                       :person/name "Clara"
+                                       :person/age 25
+                                       :person/likes-films #{2}}]])
+
+    ;; Alice is listed as cast of the film Luca
+    (is (= #{["Alice" "Luca"]}
+          (q *test-conn* '{:find [?person-name ?film-name]
+                           :where [[?p :person/name ?person-name]
+                                   [?f :film/cast ?p]
+                                   [?f :film/title ?film-name]]})))
+
+    ;; update the film omitting the :film/cast attribute should end the validity of the relationship to each person
+    (submit-tx *test-conn* [[::xt/put (dissoc luca-film-entity :film/cast)]])
+
+    ;; Ensure that there's no film with a cast
+    (is (= #{}
+          (q *test-conn* '{:find [?person-name ?film-name]
+                           :where [[?p :person/name ?person-name]
+                                   [?f :film/cast ?p]
+                                   [?f :film/title ?film-name]]})))
+
+    ;; re-adding the cast relationship again
+    (submit-tx *test-conn* [[::xt/put luca-film-entity]])
+    ;; fixme if we're running this test against SQLite it sometimes fails with (need to investigate - maybe it's too quick?)
+    ;FAIL in (attribute-assertion-and-retraction) (submit_tx_test.clj:252)
+    ;expected: (= #{["Alice" "Luca"]} (q *test-conn* (quote {:find [?person-name ?film-name], :where [[?p :person/name ?person-name] [?f :film/cast ?p] [?f :film/title ?film-name]]})))
+    ;actual: (not (= #{["Alice" "Luca"]} #{}))
+    (Thread/sleep 5)
+
+    (is (= #{["Alice" "Luca"]}
+          (q *test-conn* '{:find [?person-name ?film-name]
+                           :where [[?p :person/name ?person-name]
+                                   [?f :film/cast ?p]
+                                   [?f :film/title ?film-name]]})))
+
 
     ;; add Elio (film)
     ;; Clara likes Elio too

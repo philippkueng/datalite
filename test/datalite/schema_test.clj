@@ -52,8 +52,10 @@
                      :cardinality :db.cardinality/one
                      :references :person/id
                      :doc "The person who directed the film"}]
-        expected-queries #{"CREATE TABLE join_person_likes_films (film_id INTEGER, person_id INTEGER, valid_from TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')), valid_to TEXT)"
-                           "CREATE TABLE film (id INTEGER PRIMARY KEY AUTOINCREMENT, valid_from TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')), valid_to TEXT, title TEXT, genre TEXT, release_year INTEGER, url TEXT, directed_by INTEGER)"
-                           "CREATE TABLE person (id INTEGER PRIMARY KEY AUTOINCREMENT, valid_from TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')), valid_to TEXT, name TEXT, age INTEGER)"}
+        expected-queries #{"CREATE TABLE join_person_likes_films (film_id INTEGER, person_id INTEGER, valid_from INTEGER NOT NULL, valid_to INTEGER)"
+                           "CREATE TABLE film (rowid INTEGER PRIMARY KEY AUTOINCREMENT, id INTEGER, valid_from INTEGER NOT NULL, valid_to INTEGER, title TEXT, genre TEXT, release_year INTEGER, url TEXT, directed_by INTEGER)"
+                           "CREATE TABLE person (rowid INTEGER PRIMARY KEY AUTOINCREMENT, id INTEGER, valid_from INTEGER NOT NULL, valid_to INTEGER, name TEXT, age INTEGER)"
+                           "CREATE TRIGGER set_id_after_insert_for_person AFTER INSERT ON person FOR EACH ROW WHEN NEW.id IS NULL BEGIN UPDATE person SET id = (SELECT COALESCE(MAX(id), 0) + 1 FROM person WHERE rowid < NEW.rowid) WHERE rowid = NEW.rowid; END"
+                           "CREATE TRIGGER set_id_after_insert_for_film AFTER INSERT ON film FOR EACH ROW WHEN NEW.id IS NULL BEGIN UPDATE film SET id = (SELECT COALESCE(MAX(id), 0) + 1 FROM film WHERE rowid < NEW.rowid) WHERE rowid = NEW.rowid; END"}
         generated-queries (set (create-table-commands :dbtype/sqlite schema))]
     (is (= generated-queries expected-queries))))

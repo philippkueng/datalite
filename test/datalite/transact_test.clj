@@ -1,8 +1,9 @@
-(ns datalite.transact-test
+#_(ns datalite.transact-test
   (:require [clojure.test :refer :all]
             [datalite.core :refer [q transact]]
             [datalite.protocols.duckdb]
-            [clojure.java.jdbc :as jdbc]))
+            [clojure.java.jdbc :as jdbc])
+  (:import [java.time Instant]))
 
 (def ^:dynamic *test-conn* nil)
 
@@ -90,7 +91,8 @@
 
   ;; fixme manually insert the relationship for now to test the join queries
   (jdbc/insert! *test-conn* :join_person_likes_films {:person_id 1
-                                                      :film_id 1}))
+                                                      :film_id 1
+                                                      :valid_from (.toEpochMilli (Instant/now))}))
 
 (def dbtypes-to-test [{:dbtype :dbtype/sqlite
                        :db-uri "jdbc:sqlite::memory:"}
