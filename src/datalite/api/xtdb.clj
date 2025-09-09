@@ -30,8 +30,13 @@
                                               (= :db.cardinality/many (-> % :db/cardinality))
                                               (= :db.type/ref (-> % :db/valueType)))))]
 
-    (if (every? #(some? (-> % second :db/ident)) tx-data)
-      (core/apply-schema connection tx-data)
+    (if
+      ;; A crude check if the data that's being submitted is a schema structure.
+      (and
+          (-> tx-data first second :schema some?)
+          (->> tx-data first second :schema (every? #(-> % :db/ident some?))))
+
+      (core/apply-schema connection (-> tx-data first second :schema))
 
       (doseq [[operation entry] tx-data]
         (let [valid-time (Instant/now)
@@ -107,6 +112,8 @@
                              ;; There's no segment after the current valid-time and this segment marks the one being valid until the end of time.
                              (jdbc/insert! t-conn (keyword table-name) insertion-map)))
 
+                         ;; If the tx-data contained attributes which are tied to cardinality/many references
+                         ;;  go through them all one by one and insert them into their respective join table.
                          (let [
                                ;; Fetch the integer `id` of the entity just inserted (doesn't need to be the same row, we just need to match the :xt/id to the `id`.
                                id (xt-id->internal-id t-conn table-name (:xt/id entry))]
