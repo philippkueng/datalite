@@ -1,6 +1,5 @@
 (ns datalite.submit-tx-test
   (:require [clojure.test :refer :all]
-            [datalite.core :refer [transact]]
             [datalite.api.xtdb :refer [q submit-tx]]
             [datalite.protocols.duckdb]
             [datalite.keywords.xtdb :as xt]
@@ -112,8 +111,7 @@
 
 (defn setup! []
   (teardown!)
-  #_(submit-tx *test-conn* [[::xt/put {:datalite/schema schema}]])
-  (transact *test-conn* {:tx-data schema})
+  (submit-tx *test-conn* [[::xt/put {:schema schema}]])
   (submit-tx *test-conn* [[::xt/put {:xt/id (uuid)
                                      :person/name "Alice"
                                      :person/age 29}]

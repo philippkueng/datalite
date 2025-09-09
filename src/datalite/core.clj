@@ -44,10 +44,9 @@
 
 (defn get-schema
   [connection]
-  (-> (jdbc/query connection (format "select * from %s limit 1" schema-table-name))
-      first
-      :schema
-      (decode :msgpack)))
+  (if-let [{:keys [schema]} (-> (jdbc/query connection (format "select * from %s limit 1" schema-table-name)) first)]
+      (decode schema :msgpack)
+      []))
 
 (defn- resolve-lookup-ref [connection lookup-ref]
   (if (vector? lookup-ref)
@@ -119,7 +118,6 @@
 
             ;; check if the attribute mentioned is part of the schema and to which table it belongs
             (let [attribute (nth entry 2)]
-              ;; todo check for :db/add and :db/retract
               (if-let [attribute-schema-entry (->> schema
                                                 (filter #(= attribute (:db/ident %)))
                                                 first)]
