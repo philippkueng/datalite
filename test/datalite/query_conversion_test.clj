@@ -1,13 +1,8 @@
 (ns datalite.query-conversion-test
   (:require [clojure.test :refer :all]
             [datalite.query-conversion :refer [datalog->sql]]
-            [clojure.string :as str]))
-
-(defn- remove-line-breaks-and-trim
-  [query]
-  (->> (str/split-lines query)
-       (map str/trim)
-       (str/join " ")))
+            [datalite.utils :refer [remove-line-breaks-and-trim]])
+  (:import [java.time Instant]))
 
 (comment
   (remove-line-breaks-and-trim "SELECT
@@ -29,8 +24,9 @@
                       movie.year as movie__year,
                       movie.genre as movie__genre
                      FROM movie
-                     WHERE movie.release_year = 1985")]
-    (datalog->sql datalog->sql)))
+                     WHERE movie.release_year = 1985
+                     AND movie.valid_from < 1757065259958 AND (movie.valid_to > 1757065259958 OR movie.valid_to IS NULL)")]
+    (datalog->sql datalog->sql (Instant/ofEpochMilli 1757065259958))))
 
 (deftest simple-query-against-a-single-entity-type-without-a-filter-condition
   (let [datalog-query '[:find ?id ?title ?year ?genre
@@ -45,8 +41,9 @@
                       film.title as field_001,
                       film.release_year as field_002,
                       film.genre as field_003
-                     FROM film")]
-    (is (= (datalog->sql datalog-query) sql-query))))
+                     FROM film
+                     WHERE film.valid_from < 1757065259958 AND (film.valid_to > 1757065259958 OR film.valid_to IS NULL)")]
+    (is (= (datalog->sql datalog-query (Instant/ofEpochMilli 1757065259958)) sql-query))))
 
 (deftest simple-filter-query-against-a-single-entity-type
   (let [datalog-query '[:find ?title ?year ?genre
@@ -61,8 +58,9 @@
                       film.release_year as field_001,
                       film.genre as field_002
                      FROM film
-                     WHERE film.release_year = 1985")]
-    (is (= sql-query (datalog->sql datalog-query)))))
+                     WHERE film.release_year = 1985
+                     AND film.valid_from < 1757065259958 AND (film.valid_to > 1757065259958 OR film.valid_to IS NULL)")]
+    (is (= sql-query (datalog->sql datalog-query (Instant/ofEpochMilli 1757065259958))))))
 
 (deftest multi-filter-query-against-a-single-entity-type
   (let [datalog-query '[:find ?title ?year ?genre
@@ -80,8 +78,9 @@
                      FROM film
                      WHERE
                       film.release_year = 1985
-                      AND film.genre = 'animation'")]
-    (is (= sql-query (datalog->sql datalog-query)))))
+                      AND film.genre = 'animation'
+                      AND film.valid_from < 1757065259958 AND (film.valid_to > 1757065259958 OR film.valid_to IS NULL)")]
+    (is (= sql-query (datalog->sql datalog-query (Instant/ofEpochMilli 1757065259958))))))
 
 (deftest returning-values-and-the-entity-id
   (let [datalog-query '[:find ?e ?title ?year ?genre
@@ -97,8 +96,9 @@
                         film.release_year as field_002,
                         film.genre as field_003
                        FROM film
-                       WHERE film.release_year = 1985")]
-    (is (= sql-query (datalog->sql datalog-query)))))
+                       WHERE film.release_year = 1985
+                       AND film.valid_from < 1757065259958 AND (film.valid_to > 1757065259958 OR film.valid_to IS NULL)")]
+    (is (= sql-query (datalog->sql datalog-query (Instant/ofEpochMilli 1757065259958))))))
 
 (deftest filter-query-against-multiple-joined-entities
     (let [schema [#:db{:ident :person/likes-films
@@ -125,8 +125,11 @@
                        FROM film
                        JOIN join_person_likes_films ON join_person_likes_films.film_id = film.id
                        JOIN person ON join_person_likes_films.person_id = person.id
-                       WHERE film.release_year = 1985")]
-      (is (= sql-query (datalog->sql schema datalog-query)))))
+                       WHERE film.release_year = 1985
+                       AND film.valid_from < 1757065259958 AND (film.valid_to > 1757065259958 OR film.valid_to IS NULL)
+                       AND person.valid_from < 1757065259958 AND (person.valid_to > 1757065259958 OR person.valid_to IS NULL)
+                       AND join_person_likes_films.valid_from < 1757065259958 AND (join_person_likes_films.valid_to > 1757065259958 OR join_person_likes_films.valid_to IS NULL)")]
+      (is (= sql-query (datalog->sql schema datalog-query (Instant/ofEpochMilli 1757065259958))))))
 
 (deftest filter-query-against-cardinality-one-joined-entities
   (let [schema [#:db{:ident :film/directed-by
@@ -144,8 +147,10 @@
                       person.name as field_000,
                       film.title as field_001
                      FROM film
-                     JOIN person ON film.directed_by = person.id")]
-    (is (= sql-query (datalog->sql schema datalog-query)))))
+                     JOIN person ON film.directed_by = person.id
+                     WHERE film.valid_from < 1757065259958 AND (film.valid_to > 1757065259958 OR film.valid_to IS NULL)
+                     AND person.valid_from < 1757065259958 AND (person.valid_to > 1757065259958 OR person.valid_to IS NULL)")]
+    (is (= sql-query (datalog->sql schema datalog-query (Instant/ofEpochMilli 1757065259958))))))
 
 (comment
   (run-tests)

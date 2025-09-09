@@ -2,7 +2,8 @@
   (:require [clojure.set :as set]
             [datalog.parser :as parser]
             [datalite.utils :as utils]
-            [clojure.string :as str]))
+            [clojure.string :as str])
+  (:import [java.time Instant]))
 
 (defn- enrich-vec-of-maps-with-index [vector]
   (->> vector
@@ -25,8 +26,9 @@
     :else (str number)))
 
 (defn datalog->sql
-  ([schema query]
-   (let [parsed-query (parser/parse query)
+  ([schema query valid-time]
+   (let [valid-time-in-milliseconds (.toEpochMilli valid-time)
+         parsed-query (parser/parse query)
          consumed-where-clauses (atom #{})
          index-enriched-where-clauses (enrich-vec-of-maps-with-index (:qwhere parsed-query))
          select-fields (let [find-symbols (->> (:qfind parsed-query)
@@ -74,13 +76,13 @@
                                     namespace)))
                            distinct
                            utils/ordered-table-names)
-         ;_pr-involved-tables (clojure.pprint/pprint involved-tables)
+         ;_pr-involved-tables (println "involved tables:" (pr-str involved-tables))
          ;; based on what do we decide which table is the base? - take the first one alphabetically for now.
          from-part (str "FROM " (-> involved-tables first))
          ;_pr-unconsumed-where-clauses (clojure.pprint/pprint (unconsumed-queries
          ;                                                      index-enriched-where-clauses
          ;                                                      @consumed-where-clauses))
-         join-part (if (> (count involved-tables) 1)
+         join-clauses (if (> (count involved-tables) 1)
                      ;; we got more than 1 table, hence we'll need to join them
 
                      ;; in my example queries so far, we're only joining the :person entity with the :film entity
@@ -118,7 +120,9 @@
                                                                           set)
                            ;_pr-reference-attributes-from-schema (clojure.pprint/pprint reference-attributes-from-schema)
                            join-relevant-where-clauses (->> where-clauses
-                                                         (filter #(contains? reference-attributes-from-schema-idents-only (-> % :pattern (nth 1) :value))))
+                                                         (filter #(contains?
+                                                                    reference-attributes-from-schema-idents-only
+                                                                    (-> % :pattern (nth 1) :value))))
                            ;_pr-join-relevant-where-clauses (clojure.pprint/pprint join-relevant-where-clauses)
 
                            ;; add the `from` and `to` tables to it so we have all the information about a clause in the same place
@@ -143,8 +147,8 @@
                                                       (map #(list (:from-table %) (:to-table %)))
                                                       flatten
                                                       sort)
-                           ;; Not having a better idea, we'll take all the tables in involved in a query and take the
-                           ;;  appearing first in the alphabet for the `from-table`.
+                           ;; Not having a better idea, we'll take all the tables involved in a query and take the
+                           ;;  one appearing in the alphabet first as the `from-table`.
                            from-table (first tables-involved-in-query)
                            join-expressions (loop [join-expressions [] ;; the place we're accumulating SQL expressions.
                                                    existing-tables #{from-table}
@@ -174,25 +178,36 @@
                                                         (->> (if (= :db.cardinality/many (:cardinality clause-to-add))
                                                                (list
                                                                  ;; In the first join operation we want to link against an already mentioned table -> `first-table-to-join`.
-                                                                 (format "JOIN %s ON %s.%s = %s.%s"
-                                                                   (utils/join-table-name (:attribute clause-to-add))
-                                                                   (utils/join-table-name (:attribute clause-to-add))
-                                                                   (format "%s_id" (utils/replace-dashes-with-underlines first-table-to-join))
-                                                                   (utils/replace-dashes-with-underlines first-table-to-join)
-                                                                   (utils/replace-dashes-with-underlines (:from-column clause-to-add)))
-                                                                 (format "JOIN %s ON %s.%s = %s.%s"
-                                                                   second-table-to-join
-                                                                   (utils/join-table-name (:attribute clause-to-add))
-                                                                   (format "%s_id" (utils/replace-dashes-with-underlines second-table-to-join))
-                                                                   (utils/replace-dashes-with-underlines second-table-to-join)
-                                                                   "id"))
+                                                                 {:join-expression
+                                                                  (format "JOIN %s ON %s.%s = %s.%s"
+                                                                    (utils/join-table-name (:attribute clause-to-add))
+                                                                    (utils/join-table-name (:attribute clause-to-add))
+                                                                    (format "%s_id" (utils/replace-dashes-with-underlines first-table-to-join))
+                                                                    (utils/replace-dashes-with-underlines first-table-to-join)
+                                                                    (utils/replace-dashes-with-underlines (:from-column clause-to-add)))
+                                                                  :join-table-name
+                                                                  (utils/join-table-name (:attribute clause-to-add))
+                                                                  #_(format "%s.valid_from < %s AND (%s.valid_to > %s OR %s.valid_to IS NULL)"
+                                                                    (utils/join-table-name (:attribute clause-to-add))
+                                                                    valid-time-in-milliseconds
+                                                                    (utils/join-table-name (:attribute clause-to-add))
+                                                                    valid-time-in-milliseconds
+                                                                    (utils/join-table-name (:attribute clause-to-add)))}
+                                                                 {:join-expression
+                                                                  (format "JOIN %s ON %s.%s = %s.%s"
+                                                                    second-table-to-join
+                                                                    (utils/join-table-name (:attribute clause-to-add))
+                                                                    (format "%s_id" (utils/replace-dashes-with-underlines second-table-to-join))
+                                                                    (utils/replace-dashes-with-underlines second-table-to-join)
+                                                                    "id")})
                                                                (list
-                                                                 (format "JOIN %s ON %s.%s = %s.%s"
-                                                                   (utils/replace-dashes-with-underlines second-table-to-join)
-                                                                   (utils/replace-dashes-with-underlines (:from-table clause-to-add))
-                                                                   (utils/replace-dashes-with-underlines (:from-column clause-to-add))
-                                                                   (utils/replace-dashes-with-underlines (:to-table clause-to-add))
-                                                                   (utils/replace-dashes-with-underlines (:to-column clause-to-add)))))
+                                                                 {:join-expression
+                                                                  (format "JOIN %s ON %s.%s = %s.%s"
+                                                                    (utils/replace-dashes-with-underlines second-table-to-join)
+                                                                    (utils/replace-dashes-with-underlines (:from-table clause-to-add))
+                                                                    (utils/replace-dashes-with-underlines (:from-column clause-to-add))
+                                                                    (utils/replace-dashes-with-underlines (:to-table clause-to-add))
+                                                                    (utils/replace-dashes-with-underlines (:to-column clause-to-add)))}))
                                                           (remove nil?))))
 
                                                     (set/union existing-tables #{(-> clause-to-add :from-table) (-> clause-to-add :to-table)})
@@ -205,10 +220,29 @@
                        ;; todo with this information we can construct the join of the tables, however how do we ensure the source table is also included?
                        ;;  should we do the `join` part prior to the `from` part, and then put the table into the `from` part which hasn't been mentioned elsewhere?
 
-                       (str/join " " join-expressions))
+                       #_(str/join " " join-expressions)
+                       join-expressions)
 
                      ;; As we only got a single table to work with, leave the join part empty
                      nil)
+         join-part (when join-clauses
+                     (->> join-clauses
+                       (map :join-expression)
+                       (str/join " ")))
+         ;_print-join-table-names (println "join-table-names:" (pr-str (map :join-table-name join-clauses)))
+         valid-time-where-clauses (->> (concat
+                                         involved-tables
+                                         (->> join-clauses
+                                           (map :join-table-name)
+                                           (remove nil?)))
+                                    (map (fn [table]
+                                           (format "%s.valid_from < %s AND (%s.valid_to > %s OR %s.valid_to IS NULL)"
+                                             table
+                                             valid-time-in-milliseconds
+                                             table
+                                             valid-time-in-milliseconds
+                                             table))))
+         ;_print-valid-time-where-clauses (println "valid time where clauses:" (pr-str valid-time-where-clauses))
          where-clauses (->> (unconsumed-queries
                               index-enriched-where-clauses
                               @consumed-where-clauses)
@@ -223,14 +257,14 @@
                                               (str "'" raw-value "'")
                                               raw-value)]
                                   (str/join " " [field "=" value])))))
-         where-part (when (not-empty where-clauses)
-                      (str "WHERE " (str/join " AND " where-clauses)))]
+         where-part (when (not-empty (concat where-clauses valid-time-where-clauses))
+                      (str "WHERE " (str/join " AND " (concat where-clauses valid-time-where-clauses))))]
      (->> [select-part from-part join-part where-part]
        (remove nil?)
        (str/join " "))))
 
   ;; This is discouraged to be used as it'll fail for queries needing more information for JOINs
-  ([query] (datalog->sql [] query)))
+  ([query valid-time] (datalog->sql [] query valid-time)))
 
 
 (datalog->sql [#:db{:ident :film/directed-by
@@ -242,7 +276,8 @@
     :where
     [?f :film/title ?film-title]
     [?f :film/directed-by ?p]
-    [?p :person/name ?person-name]])
+    [?p :person/name ?person-name]]
+  (Instant/now))
 
 (comment
   (datalog->sql [#:db{:ident :person/likes-films
@@ -273,7 +308,8 @@
       [?l :location/country ?c]
       [?c :country/name ?country-name]
 
-      [?e :film/release-year 1985]]))
+      [?e :film/release-year 1985]]
+    (Instant/now)))
 
 ;;
 ;; FROM country
@@ -325,6 +361,7 @@
   (namespace :movie/genre)                                  ;; -> movie
   (name :movie/genre)                                       ;; -> genre
   )
+
 (comment
   (let [parsed-query (parser/parse '[:find ?title ?year ?genre
                                      :where
@@ -338,12 +375,191 @@
                            (map :symbol))]
     parsed-query)
 
+  (let [parsed-query (parser/parse '[:find ?title ?year ?genre
+                                     :where
+                                     [?e :movie/title ?title]
+                                     [?e :movie/release-year ?year]
+                                     [?e :movie/genre ?genre]
+                                     [(= ?genre "something")]
+                                     [?e :movie/release-year 1985]])]
+    parsed-query)
+
+  (defn map->datomic-query
+    "A helper function to convert the XT EQL datalog into datomic datalog
+     I've used https://www.perplexity.ai/search/help-me-with-a-clojure-macro-t-9dFVKrH0QpCEi4vQOqiVvQ for Perplexity to suggest me a function."
+    [m]
+    (vec (mapcat (fn [[k v]]
+                   (if (vector? v)
+                     (cons k v)
+                     [k v]))
+           m)))
+
+  (map->datomic-query '{:find [?title ?year ?genre]
+                        :where [[?e :movie/title ?title]
+                                [?e :movie/release-year ?year]
+                                [?e :movie/genre ?genre]
+                                [(= ?genre "something")]
+                                [?e :movie/release-year 1985]]})
+
+  (let [xt-query '{:find [?title ?year ?genre]
+                   :where [[?e :movie/title ?title]
+                           [?e :movie/release-year ?year]
+                           [?e :movie/genre ?genre]
+                           [(= ?genre "something")]
+                           [?e :movie/release-year 1985]]}
+
+        parsed-query (parser/parse (map->datomic-query xt-query))]
+    parsed-query)
+
+  (let [xt-query '{:find [(pull ?e [*])]
+                   :where [[?e :movie/title ?title]
+                           [?e :movie/release-year ?year]
+                           [?e :movie/genre ?genre]
+                           [(= ?genre "something")]
+                           [?e :movie/release-year 1985]]}
+
+        parsed-query (parser/parse (map->datomic-query xt-query))]
+    parsed-query)
+
+  ;=>
+  ;#datalog.parser.type.Query
+  ;        {:qfind #datalog.parser.type.FindRel
+  ;                {:elements [#datalog.parser.type.Pull
+  ;                        {:source #datalog.parser.type.SrcVar {:symbol $},
+  ;                         :variable #datalog.parser.type.Variable {:symbol ?e},
+  ;                         :pattern #datalog.parser.type.Constant {:value [*]}}]},
+  ;         :qwith nil,
+  ;         :qin [#datalog.parser.type.BindScalar {:variable #datalog.parser.type.SrcVar {:symbol $}}],
+  ;         :qwhere [#datalog.parser.type.Pattern
+  ;                {:source #datalog.parser.type.DefaultSrc {},
+  ;                 :pattern [#datalog.parser.type.Variable {:symbol ?e}
+  ;                           #datalog.parser.type.Constant {:value :movie/title}
+  ;                           #datalog.parser.type.Variable {:symbol ?title}]}
+  ;                  #datalog.parser.type.Pattern
+  ;                          {:source #datalog.parser.type.DefaultSrc {},
+  ;                           :pattern [#datalog.parser.type.Variable {:symbol ?e}
+  ;                                     #datalog.parser.type.Constant {:value :movie/release-year}
+  ;                                     #datalog.parser.type.Variable {:symbol ?year}]}
+  ;                  #datalog.parser.type.Pattern
+  ;                          {:source #datalog.parser.type.DefaultSrc {},
+  ;                           :pattern [#datalog.parser.type.Variable {:symbol ?e}
+  ;                                     #datalog.parser.type.Constant {:value :movie/genre}
+  ;                                     #datalog.parser.type.Variable {:symbol ?genre}]}
+  ;                  #datalog.parser.type.Predicate
+  ;                          {:fn #datalog.parser.type.PlainSymbol {:symbol =},
+  ;                           :args [#datalog.parser.type.Variable {:symbol ?genre} #datalog.parser.type.Constant {:value "something"}]}
+  ;                  #datalog.parser.type.Pattern
+  ;                          {:source #datalog.parser.type.DefaultSrc {},
+  ;                           :pattern [#datalog.parser.type.Variable {:symbol ?e}
+  ;                                     #datalog.parser.type.Constant {:value :movie/release-year}
+  ;                                     #datalog.parser.type.Constant {:value 1985}]}],
+  ;         :qlimit nil,
+  ;         :qoffset nil,
+  ;         :qreturnmaps nil}
+
+  (let [xt-query '{:find [(pull ?e [:movie/title :movie/release-year])]
+                   :where [[?e :movie/title ?title]
+                           [?e :movie/release-year ?year]
+                           [?e :movie/genre ?genre]
+                           [(= ?genre "something")]
+                           [?e :movie/release-year 1985]]}
+
+        parsed-query (parser/parse (map->datomic-query xt-query))]
+    parsed-query)
+  ;=>
+  ;#datalog.parser.type.Query
+  ;        {:qfind #datalog.parser.type.FindRel
+  ;                {:elements [#datalog.parser.type.Pull
+  ;                        {:source #datalog.parser.type.SrcVar {:symbol $},
+  ;                         :variable #datalog.parser.type.Variable {:symbol ?e},
+  ;                         :pattern #datalog.parser.type.Constant {:value [:movie/title :movie/release-year]}}]},
+  ;         :qwith nil,
+  ;         :qin [#datalog.parser.type.BindScalar {:variable #datalog.parser.type.SrcVar {:symbol $}}],
+  ;         :qwhere [#datalog.parser.type.Pattern
+  ;                {:source #datalog.parser.type.DefaultSrc {},
+  ;                 :pattern [#datalog.parser.type.Variable {:symbol ?e}
+  ;                           #datalog.parser.type.Constant {:value :movie/title}
+  ;                           #datalog.parser.type.Variable {:symbol ?title}]}
+  ;                  #datalog.parser.type.Pattern
+  ;                          {:source #datalog.parser.type.DefaultSrc {},
+  ;                           :pattern [#datalog.parser.type.Variable {:symbol ?e}
+  ;                                     #datalog.parser.type.Constant {:value :movie/release-year}
+  ;                                     #datalog.parser.type.Variable {:symbol ?year}]}
+  ;                  #datalog.parser.type.Pattern
+  ;                          {:source #datalog.parser.type.DefaultSrc {},
+  ;                           :pattern [#datalog.parser.type.Variable {:symbol ?e}
+  ;                                     #datalog.parser.type.Constant {:value :movie/genre}
+  ;                                     #datalog.parser.type.Variable {:symbol ?genre}]}
+  ;                  #datalog.parser.type.Predicate
+  ;                          {:fn #datalog.parser.type.PlainSymbol {:symbol =},
+  ;                           :args [#datalog.parser.type.Variable {:symbol ?genre} #datalog.parser.type.Constant {:value "something"}]}
+  ;                  #datalog.parser.type.Pattern
+  ;                          {:source #datalog.parser.type.DefaultSrc {},
+  ;                           :pattern [#datalog.parser.type.Variable {:symbol ?e}
+  ;                                     #datalog.parser.type.Constant {:value :movie/release-year}
+  ;                                     #datalog.parser.type.Constant {:value 1985}]}],
+  ;         :qlimit nil,
+  ;         :qoffset nil,
+  ;         :qreturnmaps nil}
+
+  ;; an extreme nesting example for a pull query
+  (let [xt-query '{:find [(pull ?e [{:release/media
+                                     [{:medium/tracks
+                                       [:track/name {:track/artists [:artist/name]}]}]}])]
+                   :where [[?e :movie/title ?title]
+                           [?e :movie/release-year ?year]
+                           [?e :movie/genre ?genre]
+                           [(= ?genre "something")]
+                           [?e :movie/release-year 1985]]}
+
+        parsed-query (parser/parse (map->datomic-query xt-query))]
+    parsed-query)
+  ;=>
+  ;#datalog.parser.type.Query
+  ;        {:qfind #datalog.parser.type.FindRel
+  ;                {:elements [#datalog.parser.type.Pull
+  ;                        {:source #datalog.parser.type.SrcVar {:symbol $},
+  ;                         :variable #datalog.parser.type.Variable {:symbol ?e},
+  ;                         :pattern #datalog.parser.type.Constant
+  ;                                {:value [#:release {:media [#:medium {:tracks [:track/name #:track {:artists [:artist/name]}]}]}]}}]},
+  ;         :qwith nil,
+  ;         :qin [#datalog.parser.type.BindScalar {:variable #datalog.parser.type.SrcVar {:symbol $}}],
+  ;         :qwhere [#datalog.parser.type.Pattern
+  ;                {:source #datalog.parser.type.DefaultSrc {},
+  ;                 :pattern [#datalog.parser.type.Variable {:symbol ?e}
+  ;                           #datalog.parser.type.Constant {:value :movie/title}
+  ;                           #datalog.parser.type.Variable {:symbol ?title}]}
+  ;                  #datalog.parser.type.Pattern
+  ;                          {:source #datalog.parser.type.DefaultSrc {},
+  ;                           :pattern [#datalog.parser.type.Variable {:symbol ?e}
+  ;                                     #datalog.parser.type.Constant {:value :movie/release-year}
+  ;                                     #datalog.parser.type.Variable {:symbol ?year}]}
+  ;                  #datalog.parser.type.Pattern
+  ;                          {:source #datalog.parser.type.DefaultSrc {},
+  ;                           :pattern [#datalog.parser.type.Variable {:symbol ?e}
+  ;                                     #datalog.parser.type.Constant {:value :movie/genre}
+  ;                                     #datalog.parser.type.Variable {:symbol ?genre}]}
+  ;                  #datalog.parser.type.Predicate
+  ;                          {:fn #datalog.parser.type.PlainSymbol {:symbol =},
+  ;                           :args [#datalog.parser.type.Variable {:symbol ?genre} #datalog.parser.type.Constant {:value "something"}]}
+  ;                  #datalog.parser.type.Pattern
+  ;                          {:source #datalog.parser.type.DefaultSrc {},
+  ;                           :pattern [#datalog.parser.type.Variable {:symbol ?e}
+  ;                                     #datalog.parser.type.Constant {:value :movie/release-year}
+  ;                                     #datalog.parser.type.Constant {:value 1985}]}],
+  ;         :qlimit nil,
+  ;         :qoffset nil,
+  ;         :qreturnmaps nil}
+
+
+
   (datalog->sql '[:find ?title ?genre ?year
                   :where
                   [?e :movie/title ?title]
                   [?e :movie/genre ?genre]
                   [?e :movie/release-year ?year]
-                  [?e :movie/release-year 1985]]))
+                  [?e :movie/release-year 1985]]
+    (Instant/now)))
 
 (comment
   #_(q db

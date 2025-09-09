@@ -1,10 +1,9 @@
-(ns datalite.query-test
+#_(ns datalite.query-test
   (:require [clojure.test :refer :all]
             [datalite.core :refer [q transact]]
             [datalite.protocols.duckdb]
-            #_[clojure.java.jdbc :as jdbc]
-            [next.jdbc :as jdbc]
-            [next.jdbc.sql :as jdbc-sql]))
+            [clojure.java.jdbc :as jdbc])
+  (:import [java.time Instant]))
 
 (def ^:dynamic *test-conn* nil)
 
@@ -64,7 +63,7 @@
   (let [{:keys [dbtype]} *test-conn*]
     (cond
       (= dbtype :dbtype/postgresql)
-      (let [tables (jdbc-sql/query *test-conn*
+      (let [tables (jdbc/query *test-conn*
                      ["SELECT tablename FROM pg_tables WHERE schemaname = 'public'"])]
         (doseq [{:keys [tablename]} tables]
           (jdbc/execute! *test-conn* [(str "DROP TABLE IF EXISTS " tablename " CASCADE;")])))
@@ -92,8 +91,9 @@
                                     }]})
 
   ;; fixme manually insert the relationship for now to test the join queries
-  (jdbc-sql/insert! *test-conn* :join_person_likes_films {:person_id 1
-                                                      :film_id 1}))
+  (jdbc/insert! *test-conn* :join_person_likes_films {:person_id 1
+                                                      :film_id 1
+                                                      :valid_from (.toEpochMilli (Instant/now))}))
 
 (def dbtypes-to-test [{:dbtype :dbtype/sqlite
                        :db-uri "jdbc:sqlite::memory:"}

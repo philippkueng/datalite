@@ -9,9 +9,8 @@
    [datalite.query-conversion :refer [datalog->sql]]
    [datalite.serialisation :refer [encode decode]]
    [mount.core :as mount]
-   #_[clojure.java.jdbc :as jdbc]
-   [next.jdbc :as jdbc]
-   [next.jdbc.sql :as jdbc-sql]))
+   [clojure.java.jdbc :as jdbc])
+  (:import [java.time Instant]))
 
 (defn ensure-required-tables!
   "Checks if the required tables exist and if not creates them."
@@ -24,40 +23,34 @@
           (throw (ex-info "Unsupported dbtype" {:dbtype dbtype})))
         ;; The key for table name may differ by DB, so adjust as needed:
         table-key (case dbtype
-                    :dbtype/sqlite :tables/name
-                    :dbtype/postgresql :tables/table_name
-                    :dbtype/duckdb :tables/table_name)
-        existing-tables (set (map table-key (jdbc-sql/query connection table-check-sql)))
-        _print-exsting-tables (println (pr-str (jdbc-sql/query connection table-check-sql)))
-        _print-exsting-tables (println (pr-str existing-tables))
+                    :dbtype/sqlite :name
+                    :dbtype/postgresql :table_name
+                    :dbtype/duckdb :table_name)
+        existing-tables (set (map table-key (jdbc/query connection table-check-sql)))
         required-tables #{schema-table-name transactions-table-name}
-        missing-tables (clojure.set/difference required-tables existing-tables)
-        _print-missing-tables (println (pr-str missing-tables))]
+        missing-tables (clojure.set/difference required-tables existing-tables)]
     (when (seq missing-tables)
       (doseq [cmd (schema/create-internal-table-commands dbtype)]
-        (println cmd)
-        (jdbc/with-transaction [tx connection]
-          (jdbc/execute! tx [cmd]))
-        (println "ran" cmd)))))
+        (jdbc/execute! connection cmd)))))
 
 (defn create-tables!
   "Convenience functions to create all the tables required for supporting the schema"
   [connection schema]
   (doseq [command (create-table-commands (:dbtype connection) schema)]
-    (jdbc/execute-one! connection [command]))
+    (jdbc/execute! connection command))
   (when (= :dbtype/sqlite (:dbtype connection))
-    (jdbc/execute-one! connection [(create-full-text-search-table-commands schema)])))
+    (doseq [command (create-full-text-search-table-commands schema)]
+      (jdbc/execute! connection command))))
 
 (defn get-schema
   [connection]
-  (-> (jdbc-sql/query connection [(format "select * from %s limit 1" schema-table-name)])
-    first
-    (get (keyword schema-table-name "schema"))
-    (decode :msgpack)))
+  (if-let [{:keys [schema]} (-> (jdbc/query connection (format "select * from %s limit 1" schema-table-name)) first)]
+      (decode schema :msgpack)
+      []))
 
 (defn- resolve-lookup-ref [connection lookup-ref]
   (if (vector? lookup-ref)
-    (-> (jdbc-sql/query connection [(format "select id from %s where %s = ? limit 1"
+    (-> (jdbc/query connection [(format "select id from %s where %s = ? limit 1"
                                   (-> lookup-ref first namespace)
                                   (-> lookup-ref first name))
                                 (-> lookup-ref second)])
@@ -69,15 +62,15 @@
 (defn persist-transaction-data
   "Persist the transactions' tx-data into the transactions table"
   [connection tx-data]
-  (jdbc-sql/insert! connection (keyword transactions-table-name) {:data (encode tx-data :msgpack)}))
+  (jdbc/insert! connection (keyword transactions-table-name) {:data (encode tx-data :msgpack)}))
 
 (defn apply-schema
   [connection tx-data]
   ;; Persist the schema.
-  (jdbc-sql/insert! connection (keyword schema-table-name) {:schema (encode tx-data :msgpack)})
+  (jdbc/insert! connection (keyword schema-table-name) {:schema (encode tx-data :msgpack)})
 
   ;; Apply the schema.
-  (println "Applying schema...")
+  #_(println "Applying schema for..." (:dbtype connection))
   (create-tables! connection tx-data))
 
 ;(defn is-tx-data-a-schema? [tx-data]
@@ -95,81 +88,82 @@
   (if (every? #(some? (:db/ident %)) tx-data)
     (apply-schema connection tx-data)
 
-    (doseq [entry tx-data]
-      ;; An entry can either be a map of asserts or a vector of a single assert.
-      (cond
-        ;; A map where each key represents an individual assert.
-        (map? entry)
-        (let [table-name (->> entry keys first namespace)]
-          (jdbc-sql/insert! connection
+    (let [valid-time (Instant/now)
+          valid-time-in-milliseconds (.toEpochMilli valid-time)]
+      (doseq [entry tx-data]
+        ;; An entry can either be a map of asserts or a vector of a single assert.
+        (cond
+          ;; A map where each key represents an individual assert.
+          (map? entry)
+          (let [table-name (->> entry keys first namespace)]
+            (jdbc/insert! connection
 
-                        ;; table-name
-                        (keyword table-name)
+              ;; table-name
+              (keyword table-name)
 
-                        ;; remove-namespaces-from-map
-                        (reduce (fn [non-namespaced-entry namespaced-key]
-                                  (conj non-namespaced-entry
-                                        {(-> namespaced-key name replace-dashes-with-underlines keyword) (namespaced-key entry)}))
-                                {}
-                                (keys entry))))
+              ;; remove-namespaces-from-map
+              (reduce (fn [non-namespaced-entry namespaced-key]
+                        (conj non-namespaced-entry
+                          {(-> namespaced-key name replace-dashes-with-underlines keyword) (namespaced-key entry)}))
+                {}
+                (keys entry))))
 
-        ;; A vector which asserts to a single attribute. Can be multiple asserts in case of a one-to-many relationship
-        (and (vector? entry)
-             (contains? #{:db/add :db/retract} (first entry)))
-        (let [schema (get-schema connection)]
-          ;; ensure the shape matches my expectations
-          ;; todo do more checks with a schema checker (eg. Clojure Spec or Malli)
-          (assert (= 4 (count entry)) "There are not enough attributes in the addition or retraction")
+          ;; A vector which asserts to a single attribute. Can be multiple asserts in case of a one-to-many relationship
+          (and (vector? entry)
+            (contains? #{:db/add :db/retract} (first entry)))
+          (let [schema (get-schema connection)]
+            ;; ensure the shape matches my expectations
+            ;; todo do more checks with a schema checker (eg. Clojure Spec or Malli)
+            (assert (= 4 (count entry)) "There are not enough attributes in the addition or retraction")
 
-          ;; check if the attribute mentioned is part of the schema and to which table it belongs
-          (let [attribute (nth entry 2)]
-            ;; todo check for :db/add and :db/retract
-            (if-let [attribute-schema-entry (->> schema
-                                                 (filter #(= attribute (:db/ident %)))
-                                                 first)]
-              (if (and (= :db.type/ref (:db/valueType attribute-schema-entry))
-                       (= :db.cardinality/many (:db/cardinality attribute-schema-entry)))
-                ;; if it's a reference type - we'll have to check its' cardinality
-                ;;  - if it's a one -> we can just set it
-                ;;  - if it's a many -> we can set it differently
-                (condp = (first entry)
-                  :db/add
-                  (jdbc-sql/insert! connection
-                                (utils/join-table-name (:db/ident attribute-schema-entry))
-                                {(keyword (format "%s_id" (-> attribute-schema-entry :db/ident (namespace))))
-                                 (resolve-lookup-ref connection (nth entry 1))
-                                 (keyword (format "%s_id" (-> attribute-schema-entry :db/references (namespace))))
-                                 (resolve-lookup-ref connection (nth entry 3))})
+            ;; check if the attribute mentioned is part of the schema and to which table it belongs
+            (let [attribute (nth entry 2)]
+              (if-let [attribute-schema-entry (->> schema
+                                                (filter #(= attribute (:db/ident %)))
+                                                first)]
+                (if (and (= :db.type/ref (:db/valueType attribute-schema-entry))
+                      (= :db.cardinality/many (:db/cardinality attribute-schema-entry)))
+                  ;; if it's a reference type - we'll have to check its' cardinality
+                  ;;  - if it's a one -> we can just set it
+                  ;;  - if it's a many -> we can set it differently
+                  (condp = (first entry)
+                    :db/add
+                    (jdbc/insert! connection
+                      (utils/join-table-name (:db/ident attribute-schema-entry))
+                      {(keyword (format "%s_id" (-> attribute-schema-entry :db/ident (namespace))))
+                       (resolve-lookup-ref connection (nth entry 1))
+                       (keyword (format "%s_id" (-> attribute-schema-entry :db/references (namespace))))
+                       (resolve-lookup-ref connection (nth entry 3))})
 
-                  :db/retract
-                  (jdbc-sql/delete! connection
-                    (utils/join-table-name (:db/ident attribute-schema-entry))
-                    [(format "%s = ? and %s = ?"
-                       (format "%s_id" (-> attribute-schema-entry :db/ident (namespace)))
-                                         (format "%s_id" (-> attribute-schema-entry :db/references (namespace))))
-                     (resolve-lookup-ref connection (nth entry 1))
-                     (resolve-lookup-ref connection (nth entry 3))])
+                    :db/retract
+                    (jdbc/delete! connection
+                      (utils/join-table-name (:db/ident attribute-schema-entry))
+                      [(format "%s = ? and %s = ?"
+                         (format "%s_id" (-> attribute-schema-entry :db/ident (namespace)))
+                         (format "%s_id" (-> attribute-schema-entry :db/references (namespace))))
+                       (resolve-lookup-ref connection (nth entry 1))
+                       (resolve-lookup-ref connection (nth entry 3))])
 
-                  :else (throw (ex-info "Invalid transact operation." entry)))
+                    :else (throw (ex-info "Invalid transact operation." entry)))
 
-                ;; if it's a normal type -> we can run some additional checks or just attempt to set it
-                ;;  and let the database library handle any errors.
-                (condp = (first entry)
-                  :db/add
-                  (jdbc-sql/update! connection
-                                (-> attribute-schema-entry :db/ident (namespace) keyword)
-                                {(-> attribute name keyword) (resolve-lookup-ref connection (nth entry 3))}
-                    ["id = ?" (resolve-lookup-ref connection (nth entry 1))])
+                  ;; if it's a normal type -> we can run some additional checks or just attempt to set it
+                  ;;  and let the database library handle any errors.
+                  (condp = (first entry)
+                    :db/add
+                    (jdbc/update! connection
+                      (-> attribute-schema-entry :db/ident (namespace) keyword)
+                      {(-> attribute name keyword) (resolve-lookup-ref connection (nth entry 3))}
+                      ["id = ?" (resolve-lookup-ref connection (nth entry 1))])
 
-                  :db/retract
-                  (jdbc-sql/update! connection
-                                (-> attribute-schema-entry :db/ident (namespace) keyword)
-                                {(-> attribute name keyword) nil}
-                                ["id = ?" (nth entry 1)])))
+                    :db/retract
+                    (jdbc/update! connection
+                      (-> attribute-schema-entry :db/ident (namespace) keyword)
+                      {(-> attribute name keyword) nil}
+                      ["id = ?" (nth entry 1)])))
 
-              (throw (ex-info "The attribute isn't defined in any prior schema." entry)))))
+                (throw (ex-info "The attribute isn't defined in any prior schema." entry)))))
 
-        :else (throw (ex-info "Not implement transact payload" entry))))))
+          :else (throw (ex-info "Not implement transact payload" entry)))))))
 
 (defn- map-record->vec-record [record]
   (->> record
@@ -197,12 +191,15 @@
 (defn q
   [connection datalog-query]
   (let [schema (get-schema connection)
-        sql-query (datalog->sql schema datalog-query)
+        valid-time (if (some? (:valid-time connection))
+                     (:valid-time connection)
+                     (Instant/now))
+        sql-query (datalog->sql schema datalog-query valid-time)
         ;_print-sql-query (println sql-query)
         ]
-    (->> [sql-query]
-      (jdbc-sql/query connection)
-      jdbc-response->datomic-response)))
+    (->> sql-query
+         (jdbc/query connection)
+         jdbc-response->datomic-response)))
 
 (comment
   (q db '[:find ?id ?name
@@ -220,7 +217,8 @@
   (datalog->sql '[:find ?id ?name
                   :where
                   [?e :person/name ?name]
-                  [?e :person/id ?id]])
+                  [?e :person/id ?id]]
+    (Instant/now))
 
   (->> (jdbc/query db "select person.id as field_001, person.name as field_002, person.age as field_003 from person")
        jdbc-response->datomic-response))

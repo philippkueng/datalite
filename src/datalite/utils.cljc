@@ -17,3 +17,9 @@
   (replace-dashes-with-underlines (format "join_%s_%s"
                                     (namespace schema-attribute)
                                     (name schema-attribute))))
+
+(defn remove-line-breaks-and-trim
+  [query]
+  (->> (str/split-lines query)
+    (map str/trim)
+    (str/join " ")))
