@@ -38,4 +38,5 @@ clj -X:test :nses '[datalite.submit-tx-test]'
 
 ## License
 
-Open Source but haven't decided on the actual license yet, recommendations welcome.
+DataLite is licensed under the Mozilla Public License, version 2
+
