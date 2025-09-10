@@ -1,5 +1,5 @@
 {:deps {org.clojure/clojure {:mvn/version "1.12.1"}
-        io.lambdaforge/datalog-parser {:mvn/version "0.1.11"}
+        io.replikativ/datalog-parser {:mvn/version "0.2.30"}
 
         ;; used for serializing
         com.cognitect/transit-clj {:mvn/version "1.0.333"}
