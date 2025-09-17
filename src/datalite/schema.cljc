@@ -155,8 +155,14 @@
                                       table
                                       table
                                       table))
-                   '())]
-    (concat sequence-statements main-tables join-tables triggers)))
+                   '())
+        indexes (flatten (condp = dbtype
+                           :dbtype/postgresql (for [table (schema->tables schema)]
+                                                (list
+                                                  (format "CREATE INDEX idx_%s_xt_id ON %s (xt_id)" table table)
+                                                  (format "CREATE INDEX idx_%s_xt_id_valid_from_valid_to ON %s (xt_id, valid_from, valid_to)" table table)))
+                           '()))]
+    (concat sequence-statements main-tables join-tables triggers indexes)))
 
 (defn- schema->full-text-search-fields
   [schema table]
