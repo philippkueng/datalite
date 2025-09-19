@@ -8,3 +8,12 @@ services:
       POSTGRES_PASSWORD: datalite
       POSTGRES_USER: datalite
       POSTGRES_DB: datalite-test
+  datalite-dev:
+    image: postgres
+    restart: always
+    ports:
+      - 5433:5432
+    environment:
+      POSTGRES_PASSWORD: datalite
+      POSTGRES_USER: datalite
+      POSTGRES_DB: datalite-dev
