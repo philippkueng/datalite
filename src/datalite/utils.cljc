@@ -23,3 +23,9 @@
   (->> (str/split-lines query)
     (map str/trim)
     (str/join " ")))
+
+(defn keyword->sql-name [k]
+  (-> (str (when (namespace k)
+             (str (namespace k) "_"))
+           (name k))
+      (clojure.string/replace "-" "_")))

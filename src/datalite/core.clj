@@ -1,7 +1,9 @@
 (ns datalite.core
   (:require
    [clojure.set :as set]
-   [datalite.config :refer [schema-table-name transactions-table-name]]
+   [datalite.config :refer [schema-table-name
+                            transactions-table-name
+                            xt-id-mapping-table-name]]
    [datalite.utils :refer [replace-dashes-with-underlines] :as utils]
    [datalite.schema :refer [create-table-commands
                             drop-table-commands
@@ -17,9 +19,9 @@
   [{:keys [dbtype] :as connection}]
   (let [table-check-sql
         (case dbtype
-          :dbtype/sqlite ["SELECT name FROM sqlite_master WHERE type='table' AND name IN (?, ?)" schema-table-name transactions-table-name]
-          :dbtype/postgresql ["SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' AND table_name IN (?, ?)" schema-table-name transactions-table-name]
-          :dbtype/duckdb ["SELECT table_name FROM information_schema.tables WHERE table_schema = 'main' AND table_name IN (?, ?)" schema-table-name transactions-table-name]
+          :dbtype/sqlite ["SELECT name FROM sqlite_master WHERE type='table' AND name IN (?, ?, ?)" schema-table-name transactions-table-name xt-id-mapping-table-name]
+          :dbtype/postgresql ["SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' AND table_name IN (?, ?, ?)" schema-table-name transactions-table-name xt-id-mapping-table-name]
+          :dbtype/duckdb ["SELECT table_name FROM information_schema.tables WHERE table_schema = 'main' AND table_name IN (?, ?, ?)" schema-table-name transactions-table-name xt-id-mapping-table-name]
           (throw (ex-info "Unsupported dbtype" {:dbtype dbtype})))
         ;; The key for table name may differ by DB, so adjust as needed:
         table-key (case dbtype

@@ -155,7 +155,7 @@
                       {:dbtype :dbtype/duckdb
                        :db-uri "jdbc:duckdb:memory:"}
                       {:dbtype :dbtype/postgresql
-                       :db-uri "jdbc:postgresql://localhost:5432/datalite-test?user=datalite&password=datalite"}])
+                       :db-uri "jdbc:postgresql://localhost:5440/datalite-test?user=datalite&password=datalite"}])
 
 (defn fixture [f]
   (doseq [{:keys [dbtype db-uri]} dbtypes-to-test]

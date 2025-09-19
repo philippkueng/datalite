@@ -74,6 +74,8 @@
                            ]
                        (jdbc/with-db-transaction [t-conn connection]
 
+                         ;; todo Ensure the :xt/id to table & id mapping is recorded
+
                          ;; Check if there's an entry in the database already for the provided :xt/id & valid_at time
                          (jdbc/execute! t-conn
                            [(format "update %s set valid_to = ? where xt_id = ? and valid_from < ? and (valid_to > ? or valid_to is null)"

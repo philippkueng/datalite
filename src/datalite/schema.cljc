@@ -1,7 +1,124 @@
 (ns datalite.schema
-  (:require [datalite.config :refer [schema-table-name transactions-table-name]]
-            [datalite.utils :as utils :refer [replace-dashes-with-underlines ordered-table-names remove-line-breaks-and-trim]]
+  (:require [datalite.config :refer [schema-table-name
+                                     transactions-table-name
+                                     xt-id-mapping-table-name]]
+            [datalite.utils :as utils :refer [replace-dashes-with-underlines
+                                              ordered-table-names
+                                              remove-line-breaks-and-trim
+                                              keyword->sql-name]]
             [clojure.string :as str]))
+
+;; as of https://www.perplexity.ai/search/when-wanting-to-execute-this-q-HH0shjFvRBWUBpx_loCjVQ
+(def reserved-postgresql-keywords #{"all"
+                                    "analyse"
+                                    "analyze"
+                                    "and"
+                                    "any"
+                                    "array"
+                                    "as"
+                                    "asc"
+                                    "asymmetric"
+                                    "authorization"
+                                    "between"
+                                    "binary"
+                                    "both"
+                                    "case"
+                                    "cast"
+                                    "check"
+                                    "collate"
+                                    "collation"
+                                    "column"
+                                    "concurrently"
+                                    "constraint"
+                                    "create"
+                                    "cross"
+                                    "current_catalog"
+                                    "current_date"
+                                    "current_role"
+                                    "current_schema"
+                                    "current_time"
+                                    "current_timestamp"
+                                    "current_user"
+                                    "default"
+                                    "deferrable"
+                                    "desc"
+                                    "distinct"
+                                    "do"
+                                    "else"
+                                    "end"
+                                    "except"
+                                    "false"
+                                    "fetch"
+                                    "for"
+                                    "foreign"
+                                    "freeze"
+                                    "from"
+                                    "full"
+                                    "grant"
+                                    "group"
+                                    "having"
+                                    "ilike"
+                                    "in"
+                                    "initial"
+                                    "inner"
+                                    "intersect"
+                                    "into"
+                                    "is"
+                                    "isnull"
+                                    "join"
+                                    "lateral"
+                                    "leading"
+                                    "left"
+                                    "like"
+                                    "limit"
+                                    "localtime"
+                                    "localtimestamp"
+                                    "natural"
+                                    "not"
+                                    "notnull"
+                                    "null"
+                                    "offset"
+                                    "on"
+                                    "only"
+                                    "or"
+                                    "order"
+                                    "outer"
+                                    "overlaps"
+                                    "placing"
+                                    "primary"
+                                    "references"
+                                    "returning"
+                                    "right"
+                                    "select"
+                                    "session_user"
+                                    "similar"
+                                    "some"
+                                    "symmetric"
+                                    "table"
+                                    "then"
+                                    "to"
+                                    "trailing"
+                                    "true"
+                                    "union"
+                                    "unique"
+                                    "user"
+                                    "using"
+                                    "variadic"
+                                    "verbose"
+                                    "when"
+                                    "where"
+                                    "window"
+                                    "with"})
+
+(defn reserved-keyword? [column-name]
+  (contains? reserved-postgresql-keywords (if (keyword? column-name)
+                                            (keyword->sql-name column-name)
+                                            column-name)))
+
+(defn escape-reserved-keyword [column-name]
+  (format "\"%s\"" (if (keyword? column-name)
+                     (keyword->sql-name column-name)
+                     column-name)))
 
 (defn- schema->tables
   [schema]
@@ -25,9 +142,12 @@
        (schema->attributes-of-table table)
        (only-single-cardinality-attributes)
        (map (fn [attribute]
-              {:field-name (-> (:db/ident attribute)
-                               name
-                               replace-dashes-with-underlines)
+              {:field-name (let [field-name (-> (:db/ident attribute)
+                                                name
+                                                replace-dashes-with-underlines)]
+                             (if (reserved-keyword? field-name)
+                               (escape-reserved-keyword field-name)
+                               field-name))
                :field-type (condp = (:db/valueType attribute)
                              :db.type/string (condp = dbtype
                                                :dbtype/sqlite "TEXT"
@@ -35,15 +155,31 @@
                                                :dbtype/postgresql "VARCHAR")
                              :db.type/keyword (condp = dbtype
                                                 :dbtype/sqlite "TEXT"
-                                                :dbtype/duckdb "VARCHAR"
-                                                :dbtype/postgresql "VARCHAR")
+                                                :dbtype/duckdb "TEXT"
+                                                :dbtype/postgresql "TEXT")
                              :db.type/uuid (condp = dbtype
                                              :dbtype/sqlite "TEXT"
                                              :dbtype/duckdb "UUID"
                                              :dbtype/postgresql "UUID")
                              :db.type/long "INTEGER"
+                             :db.type/bigint (condp = dbtype
+                                               :dbtype/sqlite "INTEGER"
+                                               :dbtype/duckdb "BIGINT"
+                                               :dbtype/postgresql "BIGINT")
+                             :db.type/bigdec (condp = dbtype
+                                               :dbtype/sqlite "NUMERIC"
+                                               :dbtype/duckdb "NUMERIC"
+                                               :dbtype/postgresql "NUMERIC")
                              :db.type/boolean "INTEGER"
-                             :db.type/ref "INTEGER")}))))
+                             :db.type/ref "INTEGER"
+
+                             :db.type/json "JSONB"
+                             :db.type/interval "INTERVAL"
+                             :db.type/date "DATE"
+                             :db.type/instant (condp = dbtype
+                                                :dbtype/sqlite "TEXT"
+                                                :dbtype/duckdb "TIMESTAMP"
+                                                :dbtype/postgresql "TIMESTAMP WITH TIME ZONE"))}))))
 
 (defn- join-table-attributes
   "Returns a sequence of maps describing join tables needed for many-to-many/ref attributes."
@@ -89,7 +225,13 @@
              transactions-table-name
              (id-type schema-table-name)
              blob-type
-             timestamp-type))
+             timestamp-type)
+           (format "CREATE TABLE %s (xt_id %s UNIQUE, table_name TEXT, internal_entity_id INTEGER)"
+                   xt-id-mapping-table-name
+                   (condp = dbtype
+                     :dbtype/sqlite "TEXT"
+                     :dbtype/duckdb "UUID"
+                     :dbtype/postgresql "UUID")))
       (remove nil?))))
 
 (defn create-table-commands
@@ -105,7 +247,7 @@
                                            :dbtype/sqlite "INTEGER NOT NULL"
                                            :dbtype/duckdb "BIGINT NOT NULL"
                                            :dbtype/postgresql "BIGINT NOT NULL")}
-                            ;; if the valid_to is open ended 'infinity' - we'll keep the value nil.
+                            ;; if the valid_to is open-ended 'infinity' - we'll keep the value nil.
                             {:field-name "valid_to"
                              :field-type (condp = dbtype
                                            :dbtype/sqlite "INTEGER"
