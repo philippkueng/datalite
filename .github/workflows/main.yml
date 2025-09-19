@@ -65,7 +65,7 @@ jobs:
 
       - name: Ensure datalite-test database exists
         run: |
-          until pg_isready -h localhost -p 5432 -U datalite; do sleep 1; done
+          until pg_isready -h localhost -p 5440 -U datalite; do sleep 1; done
           psql -h localhost -U datalite -c "CREATE DATABASE \"datalite-test\";" || true
         env:
           PGPASSWORD: datalite
