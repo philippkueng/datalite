@@ -4,7 +4,8 @@
 
 (deftest datalite-required-table-commands
   (let [expected-queries #{"CREATE TABLE dl_schema (id INTEGER PRIMARY KEY AUTOINCREMENT, schema BLOB, tx_time DATETIME DEFAULT (CURRENT_TIMESTAMP))"
-                           "CREATE TABLE dl_transactions (id INTEGER PRIMARY KEY AUTOINCREMENT, data BLOB, tx_time DATETIME DEFAULT (CURRENT_TIMESTAMP))"}
+                           "CREATE TABLE dl_transactions (id INTEGER PRIMARY KEY AUTOINCREMENT, data BLOB, tx_time DATETIME DEFAULT (CURRENT_TIMESTAMP))"
+                           "CREATE TABLE dl_xt_id_mappings (xt_id TEXT UNIQUE, table_name TEXT, internal_entity_id INTEGER)"}
         generated-queries (set (create-internal-table-commands :dbtype/sqlite))]
     (is (= generated-queries expected-queries))))
 

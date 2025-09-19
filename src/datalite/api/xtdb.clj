@@ -2,6 +2,7 @@
   (:require [datalite.core :as core]
             [datalite.keywords.xtdb :as xt]
             [datalite.utils :refer [replace-dashes-with-underlines] :as utils]
+            [datalite.config :refer [xt-id-mapping-table-name]]
             [clojure.set :as set]
             [clojure.java.jdbc :as jdbc]
             #_[next.jdbc :as jdbc]
@@ -78,9 +79,7 @@
                              ]
                          (jdbc/with-db-transaction [t-conn connection]
 
-                           ;; todo Ensure the :xt/id to table & id mapping is recorded
-
-                         ;; Check if there's an entry in the database already for the provided :xt/id & valid_at time
+                           ;; Check if there's an entry in the database already for the provided :xt/id & valid_at time
                            (jdbc/execute! t-conn
                              [(format "update %s set valid_to = ? where xt_id = ? and valid_from < ? and (valid_to > ? or valid_to is null)"
                                 table-name)
@@ -105,6 +104,7 @@
                                                  {:valid_from valid-time-in-milliseconds}
                                                  (when (number? id)
                                                    {:id id}))]
+
                              (if-let [existing-valid-to (->> (jdbc/query t-conn
                                                                [(format "select valid_to from %s where xt_id = ? and valid_from > ? order by valid_from asc limit 1"
                                                                   table-name)
@@ -118,12 +118,20 @@
                                ;; There's no segment after the current valid-time and this segment marks the one being valid until the end of time.
                                (jdbc/insert! t-conn (keyword table-name) insertion-map)))
 
-                           ;; If the tx-data contained attributes which are tied to cardinality/many references
-                           ;;  go through them all one by one and insert them into their respective join table.
                            (let [
                                  ;; Fetch the integer `id` of the entity just inserted (doesn't need to be the same row, we just need to match the :xt/id to the `id`.
                                  id (xt-id->internal-id t-conn table-name (:xt/id entry))]
 
+                             ;; Ensure the :xt/id to table & internal entity-id mapping is recorded
+                             (jdbc/execute! t-conn
+                               [(format "INSERT INTO %s (xt_id, table_name, internal_entity_id) VALUES (?, ?, ?) ON CONFLICT (xt_id) DO NOTHING"
+                                  xt-id-mapping-table-name)
+                                (:xt/id entry)
+                                table-name
+                                id])
+
+                             ;; If the tx-data contained attributes which are tied to cardinality/many references
+                             ;;  go through them all one by one and insert them into their respective join table.
                              (doseq [[attribute value] cardinality-many-ref-entries]
                                ;; Get the schema entry for this attribute to know with which table to join and how
                                (let [attribute-schema-entry (->> refs-of-cardinality-many
